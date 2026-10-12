@@ -95,6 +95,12 @@ function realPlay(cat, defCall) {
   return toResult(weightedPick(list, beta), cat);
 }
 
+// Real snap-to-whistle times, measured from nflverse clock data (see build_data.py).
+function playSeconds(kind) {
+  const list = NFL_DATA.durations[kind];
+  return list && list.length ? list[Math.floor(Math.random() * list.length)] : 5;
+}
+
 function toResult([yards, flags, epa, desc], cat) {
   const s = sim.s;
   const r = { yards, inc: !!(flags & 1), int: !!(flags & 2), fumble: !!(flags & 4), oob: !!(flags & 8), realDesc: desc, realEpa: epa };
@@ -102,11 +108,11 @@ function toResult([yards, flags, epa, desc], cat) {
   if (cat === "sack") {
     r.sack = true;
     r.yards = Math.min(-1, yards);
-    r.secs = 4;
+    r.secs = playSeconds("shortPass");
     r.text = r.fumble ? "SACKED and the ball comes loose! Defense recovers." : `SACKED for a loss of ${-r.yards}.`;
     return r;
   }
-  r.secs = r.inc ? (cat === "deep" || cat === "hail" ? 6 : 4) : cat === "deep" || cat === "hail" ? 7 : 6;
+  r.secs = playSeconds(r.inc ? "incomplete" : PASS_CATS.includes(cat) ? (cat === "deep" || cat === "hail" ? "deepPass" : "shortPass") : "run");
   if (r.int) {
     r.yards = Math.min(toGo - 1, INT_DEPTH[cat] || 8);
     r.text = `${VERB[cat]} — INTERCEPTED!`;
@@ -238,13 +244,14 @@ function renderSimMenu() {
   $("sim-list").querySelectorAll("[data-drive]").forEach((b) => (b.onclick = () => startDrive(b.dataset.drive)));
 }
 
-function startDrive(id) {
+function startDrive(id, opts = {}) {
   const d = DRIVES.find((x) => x.id === id);
+  sim.season = opts.season || null;
   stopSimClock();
   SFX.start();
   startMusic();
   sim.drive = d;
-  sim.teams = state.league === "nfl" ? { us: $("team-us").value, them: $("team-them").value } : null;
+  sim.teams = opts.teams || (state.league === "nfl" ? { us: $("team-us").value, them: $("team-them").value } : null);
   if (sim.teams && sim.teams.us === sim.teams.them) sim.teams = null;
   applyTeamColors();
   const st = JSON.parse(JSON.stringify(d.start));
@@ -885,7 +892,9 @@ function endPeriod() {
     </div>`;
   $("sim-end").classList.remove("hidden");
   $("sim-panel").classList.add("hidden");
-  $("sim-again").onclick = () => startDrive(sim.drive.id);
+  if (sim.season) recordSeasonGame(sim.season.week, d > 0 ? "W" : d < 0 ? "L" : "T", s.score.us, s.score.them);
+  $("sim-again").onclick = () => (sim.season ? openSeason() : startDrive(sim.drive.id));
+  if (sim.season) $("sim-again").textContent = "▶ Back to the season";
   $("sim-menu").onclick = () => { renderHome(); $("sim-menu-card").scrollIntoView(); };
 }
 
@@ -900,7 +909,78 @@ function wpChart(hist) {
   </svg>`;
 }
 
+// ---------- Season mode ----------
+// Each week of the real 2026 schedule becomes one late-game situation against that opponent.
+const SEASON_DRIVES = ["two-minute", "four-minute", "down-eight", "get-it-back", "prevent", "goal-line"];
+const seasonKey = () => "headset-season";
+function loadSeason() {
+  try { return JSON.parse(loadPref(seasonKey()) || "null"); } catch { return null; }
+}
+function saveSeason(x) { savePref(seasonKey(), JSON.stringify(x)); }
+
+function openSeason() {
+  if (state.league !== "nfl") { state.league = "nfl"; setLeague("nfl"); }
+  let season = loadSeason();
+  const sel = $("season-team");
+  sel.innerHTML = Object.entries(NFL_DATA.teams).sort((a, b) => a[1].name.localeCompare(b[1].name))
+    .map(([k, t]) => `<option value="${k}">${t.name}</option>`).join("");
+  if (!season || !NFL_DATA.schedule[season.team]) season = { team: $("team-us").value || "KC", results: {} };
+  sel.value = season.team;
+  sel.onchange = () => {
+    // Switching teams starts a new season.
+    season = { team: sel.value, results: {} };
+    saveSeason(season);
+    renderSeason(season);
+  };
+  saveSeason(season);
+  renderSeason(season);
+  show("season");
+}
+
+function renderSeason(season) {
+  const T = NFL_DATA.teams, team = T[season.team];
+  const games = NFL_DATA.schedule[season.team] || [];
+  const res = Object.values(season.results);
+  const w = res.filter((r) => r.res === "W").length, l = res.filter((r) => r.res === "L").length, t = res.filter((r) => r.res === "T").length;
+  $("season-title").textContent = `${team.name} · 2026 season`;
+  $("season-sub").textContent = "One late-game situation per week against the real 2026 opponent. Win it and the game goes in your column.";
+  const left = games.length - res.length;
+  const verdict = res.length === games.length
+    ? (w >= 11 ? "Division title pace. Playoffs." : w >= 10 ? "Wild-card team. Playoffs." : w >= 8 ? "In the hunt, just short." : "Black Monday is coming.")
+    : `${left} game${left === 1 ? "" : "s"} to play`;
+  $("season-record").innerHTML = `
+    <div class="stat"><span class="stat-label">Record</span><span class="stat-value">${w}-${l}${t ? `-${t}` : ""}</span></div>
+    <div class="stat"><span class="stat-label">Outlook</span><span class="stat-value">${verdict}</span></div>`;
+  const next = games.find((g) => !season.results[g.week]);
+  $("season-weeks").innerHTML = games.map((g) => {
+    const r = season.results[g.week];
+    const opp = T[g.opp] || { name: g.opp };
+    const real = g.real ? `Real result: ${g.real.us > g.real.them ? "W" : g.real.us < g.real.them ? "L" : "T"} ${g.real.us}-${g.real.them}` : `Real game: ${g.date}`;
+    return `<li><span class="wk">WK ${g.week}</span>
+      <span>${g.home ? "vs" : "at"} ${opp.name}<span class="real">${real}</span></span>
+      ${r ? `<span class="res ${r.res}">${r.res} ${r.us}-${r.them}</span>`
+          : g === next ? `<button class="tool-btn" data-season-week="${g.week}">▶ Play</button>` : `<span class="fine">—</span>`}</li>`;
+  }).join("");
+  $("season-weeks").querySelectorAll("[data-season-week]").forEach((b) => (b.onclick = () => playSeasonWeek(season, Number(b.dataset.seasonWeek))));
+}
+
+function playSeasonWeek(season, week) {
+  const g = NFL_DATA.schedule[season.team].find((x) => x.week === week);
+  const id = SEASON_DRIVES[(week * 7 + season.team.charCodeAt(0)) % SEASON_DRIVES.length];
+  startDrive(id, { teams: { us: season.team, them: g.opp }, season: { week } });
+  addLog(`Season Week ${week}: ${g.home ? "vs" : "at"} ${NFL_DATA.teams[g.opp].name}.`, "info");
+}
+
+function recordSeasonGame(week, res, us, them) {
+  const season = loadSeason();
+  if (!season) return;
+  season.results[week] = { res, us, them };
+  saveSeason(season);
+}
+
 // ---------- Wiring ----------
+$("open-season").onclick = openSeason;
+$("season-reset").onclick = () => { const s = loadSeason(); saveSeason({ team: s ? s.team : "KC", results: {} }); openSeason(); };
 document.querySelectorAll("[data-tempo]").forEach((b) => (b.onclick = () => { sim.tempo = b.dataset.tempo; SFX.click(); renderTempo(); }));
 $("sim-timeout").onclick = simTimeout;
 $("sim-break").onclick = breakHuddle;

@@ -116,5 +116,3 @@ function tryValues({ diffAfterTD, secs, posTO, defTO }, league) {
   return { pat: xp * after(diffAfterTD + 1) + (1 - xp) * after(diffAfterTD), two: two * after(diffAfterTD + 2) + (1 - two) * after(diffAfterTD) };
 }
 
-const pct = (p) => `${(p * 100).toFixed(1)}%`;
-const signed = (x, d = 2) => `${x >= 0 ? "+" : ""}${x.toFixed(d)}`;

@@ -7,6 +7,9 @@ Open `index.html` in a browser. No build step or dependencies.
 
 ## Modes
 - **Real data**: the simulator draws every snap from real NFL (nflverse, 2023–25) or college (cfbfastR, 2024–25) plays, shows each play's EPA and a live win-probability meter, and grades 4th downs with a win-probability model fit to the same data. NFL defensive calls use FTN charting (blitz, Cover 2, box count). Pick real NFL teams: their 2025–26 EPA per play tilts the plays you draw.
+- **Real-Game Companion**: follow a game and get an alert on every 4th down. Make your call before the coach does, then see the coach's call and the model's. *Replay* runs real 2026 games from play-by-play and works anywhere. *Live* polls ESPN's public scoreboard every 15 seconds and only works in a self-hosted copy (see below).
+- **Daily call**: one real 2026 decision a day, the same for everyone, with a streak.
+- **Season mode**: play your team's real 2026 schedule, one late-game situation per week, and track your record.
 - **Drive Simulator**: call every snap of a late-game drive (two-minute drill, four-minute offense, end of half, down eight). Choose the play and tempo, use timeouts, and the clock, downs and score play out under NFL or college rules. The opponent gets the ball back if you leave time, and a film room grades your clock management at the end. Play outcomes use game-style odds, not a statistical model.
 - **Real Moments (2026 season)**: real calls from this season's NFL and college games. Make your decision, then see what the coach actually did, how it played out, and sources.
 - **Play**: 10 random situations (or practice one category). Each shows a live scoreboard and field, you make the call, then get graded (Best / OK / Miss) with explanations and a coaching point.
@@ -39,3 +42,7 @@ python3 /path/to/repo/scripts/build_data.py /tmp/headset-data   # needs pandas, 
 ```
 
 The win-probability model blends a smooth logistic fit (to nflverse/cfbfastR win probability) with a table of real win probability by exact score margin in the last 15 minutes, so late-game cliffs (up 7 vs. up 6, a field goal that ties) are respected. Two-point decisions are still graded by the standard chart, where the model is too coarse.
+
+## Live mode (self-hosted)
+
+The published claude.ai page can't load outside data, so live games need your own copy. Any static host works; for GitHub Pages: repository **Settings → Pages → Deploy from a branch**, pick this branch and `/ (root)`. Live mode reads `site.api.espn.com/apis/site/v2/sports/football/{nfl,college-football}/scoreboard`, an unofficial public endpoint that can change without notice. Its parsing is defensive (fields it doesn't find are skipped), but it has not been tested against a live game from this environment, which blocks ESPN.

@@ -43,6 +43,25 @@
         </div>
         <label class="switch"><input type="checkbox" id="clock-toggle" checked /> <span>Real clock: play clock, game clock, headset cutoff, timeouts</span></label>
       </div>
+      <div class="modes">
+        <div class="card feature mode live-card">
+          <span class="tag">Game day</span>
+          <h2>Real-Game Companion</h2>
+          <p>Follow real games. Every 4th down sets off an alert: make your call before the coach does, then see what he did and what the win-probability model says.</p>
+          <div class="btn-row left">
+            <button class="primary" id="start-live">▶ Live games</button>
+          </div>
+          <label class="switch"><input type="checkbox" id="replay-q4" checked /> <span>Replays start in the 4th quarter</span></label>
+          <div class="drive-list" id="replay-list"></div>
+        </div>
+        <div class="card mode daily-card">
+          <span class="tag">Daily call</span>
+          <h2 id="daily-title">Today's decision</h2>
+          <p id="daily-blurb"></p>
+          <button class="primary" id="start-daily">▶ Make today's call</button>
+          <p class="best-score" id="daily-streak"></p>
+        </div>
+      </div>
       <div class="card feature sim-card" id="sim-menu-card">
         <span class="tag">New · Simulation</span>
         <h2>Drive Simulator</h2>
@@ -51,6 +70,10 @@
           <label>Your team <select id="team-us"></select></label>
           <label>Opponent <select id="team-them"></select></label>
           <p class="fine" id="team-blurb"></p>
+        </div>
+        <div class="season-row" id="season-row">
+          <button class="primary alt" id="open-season">▶ Season mode</button>
+          <span class="fine">Play your team's real 2026 schedule, one late-game situation per week.</span>
         </div>
         <div class="drive-list" id="sim-list"></div>
       </div>
@@ -171,6 +194,47 @@
       </div>
     </section>
 
+    <!-- Real-game companion -->
+    <section id="live" class="view hidden">
+      <div class="hud">
+        <div class="hud-item"><span class="hud-label">Companion</span><span class="hud-value small" id="live-title"></span></div>
+        <div class="wp-meter" title="Home team win probability">
+          <span class="hud-label">Win prob</span>
+          <div class="wp-bar"><div class="wp-fill" id="live-wp-fill"></div><span class="wp-num" id="live-wp-num">—</span></div>
+        </div>
+        <div class="tempo hidden" id="replay-controls">
+          <span class="hud-label">Speed</span>
+          <button data-speed="1">1x</button><button data-speed="2">2x</button><button data-speed="4">4x</button>
+          <button id="replay-pause">❚❚ Pause</button>
+        </div>
+      </div>
+      <p class="progress live-status" id="live-status" role="status"></p>
+      <div class="field" id="live-field"></div>
+      <div class="play-grid">
+        <div class="play-left">
+          <div class="scoreboard" id="live-scoreboard"></div>
+          <div class="drive-list live-games" id="live-games"></div>
+          <div class="card log-card"><h2>Play-by-play</h2><ol class="sim-log" id="live-log"></ol></div>
+        </div>
+        <div class="play-right">
+          <div class="card real-card live-prompt hidden" id="live-prompt" aria-live="polite"></div>
+          <div class="card"><h2>You vs. the coaches</h2><div id="live-tally"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Season mode -->
+    <section id="season" class="view hidden">
+      <h1 id="season-title">Season mode</h1>
+      <p class="sub" id="season-sub"></p>
+      <div class="card">
+        <div class="team-pickers"><label>Your team <select id="season-team"></select></label></div>
+        <div class="stats" id="season-record"></div>
+        <ol class="season-weeks" id="season-weeks"></ol>
+        <div class="btn-row left"><button class="primary alt" id="season-reset">Start over</button></div>
+      </div>
+    </section>
+
     <!-- Results -->
     <section id="results" class="view hidden">
       <div class="final">
@@ -279,6 +343,7 @@
   <script defer src="js/data/nfl.js"></script>
   <script defer src="js/data/cfb.js"></script>
   <script defer src="js/data/moments.js"></script>
+  <script defer src="js/data/replays.js"></script>
   <script defer src="js/scenarios.js"></script>
   <script defer src="js/real-moments.js"></script>
   <script defer src="js/clocklab.js"></script>
@@ -286,5 +351,6 @@
   <script defer src="js/model.js"></script>
   <script defer src="js/animate.js"></script>
   <script defer src="js/sim.js"></script>
+  <script defer src="js/live.js"></script>
 </body>
 </html>

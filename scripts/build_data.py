@@ -105,7 +105,8 @@ cols = ["game_id", "play_id", "season", "week", "season_type", "home_team", "awa
         "touchdown", "field_goal_result", "kick_distance", "return_yards", "touchback", "two_point_attempt",
         "two_point_conv_result", "extra_point_result", "first_down", "penalty", "ep", "epa", "wp", "wpa",
         "receive_2h_ko", "result", "pass_attempt", "rush_attempt", "fourth_down_converted",
-        "fourth_down_failed", "punt_attempt", "field_goal_attempt"]
+        "fourth_down_failed", "punt_attempt", "field_goal_attempt", "home_timeouts_remaining",
+        "away_timeouts_remaining", "total_home_score", "total_away_score"]
 pbp = pd.concat([pd.read_csv(DATA / f"pbp_{y}.csv.gz", usecols=lambda c: c in cols, low_memory=False)
                  for y in (2023, 2024, 2025, 2026)], ignore_index=True)
 reg = pbp[(pbp.season_type == "REG") & (pbp.season <= 2025)].copy()
@@ -748,6 +749,109 @@ try:
 except Exception as e:
     print("  kentucky not found", e)
 
+# ---------------------------------------------------------------- play durations
+# Snap-to-whistle time, measured where the clock was stopped before the snap and stopped
+# again after the play (incompletions, out of bounds and plays followed by a timeout in the
+# last two minutes of a half), so the clock difference is the play itself.
+allp = pbp[pbp.season <= 2025].sort_values(["game_id", "play_id"]).copy()
+allp["next_gsr"] = allp.groupby("game_id").game_seconds_remaining.shift(-1)
+allp["prev_stop"] = allp.groupby("game_id").apply(
+    lambda g: ((g.incomplete_pass == 1) | (g.out_of_bounds == 1) | (g.play_type.isin(["no_play"])) | g.desc.str.contains("Timeout", na=False)).shift(1),
+    include_groups=False).reset_index(level=0, drop=True).fillna(False)
+stop_after = (allp.incomplete_pass == 1) | (allp.out_of_bounds == 1)
+win = allp[(allp.half_seconds_remaining <= 120) & allp.prev_stop & stop_after & allp.play_type.isin(["run", "pass"])].copy()
+win["dur"] = allp.loc[win.index, "game_seconds_remaining"] - win["next_gsr"]
+win = win[win.dur.between(1, 15)]
+def dur_list(mask):
+    x = win[mask].dur.astype(int)
+    return sorted(int(v) for v in (x.sample(min(len(x), 200), random_state=1) if len(x) else []))
+durations = {
+    "run": dur_list(win.play_type == "run"),
+    "shortPass": dur_list((win.play_type == "pass") & (win.air_yards.fillna(0) < 15) & (win.complete_pass == 1)),
+    "deepPass": dur_list((win.play_type == "pass") & (win.air_yards.fillna(0) >= 15) & (win.complete_pass == 1)),
+    "incomplete": dur_list((win.play_type == "pass") & (win.incomplete_pass == 1)),
+}
+print("  durations (median s):", {k: (v[len(v) // 2] if v else None, len(v)) for k, v in durations.items()})
+nfl["durations"] = durations
+
+# ---------------------------------------------------------------- 2026 schedule (season mode)
+games = pd.read_csv(DATA / "games.csv")
+g26 = games[(games.season == 2026) & (games.game_type == "REG")]
+schedule = {}
+for t in teams:
+    rows = g26[(g26.home_team == t) | (g26.away_team == t)].sort_values("week")
+    schedule[t] = [{"week": int(r.week), "opp": r.away_team if r.home_team == t else r.home_team, "home": bool(r.home_team == t),
+                    "date": str(r.gameday), "espn": None if pd.isna(r.espn) else str(int(r.espn)),
+                    "real": None if pd.isna(r.home_score) else {"us": int(r.home_score if r.home_team == t else r.away_score),
+                                                               "them": int(r.away_score if r.home_team == t else r.home_score)}}
+                   for r in rows.itertuples()]
+nfl["schedule"] = schedule
+print("  schedule teams:", len(schedule), "games for KC:", len(schedule.get("KC", [])))
+
+# ---------------------------------------------------------------- replay games (companion)
+TYPE = {"run": "run", "pass": "pass", "punt": "punt", "field_goal": "fg", "kickoff": "kickoff", "extra_point": "xp",
+        "qb_kneel": "kneel", "qb_spike": "spike", "no_play": "other"}
+
+
+def nfl_replay(game_id, title):
+    g = nfl26[nfl26.game_id == game_id].sort_values("play_id")
+    rows = []
+    for r in g.itertuples():
+        if pd.isna(r.qtr) or (pd.isna(r.posteam) and "Timeout" not in str(r.desc_full)):
+            continue
+        home = r.posteam == r.home_team
+        typ = "timeout" if "Timeout #" in str(r.desc_full) else ("2pt" if r.two_point_attempt == 1 else TYPE.get(r.play_type, "other"))
+        hs = int(r.posteam_score if home else r.defteam_score) if not pd.isna(r.posteam_score) else None
+        as_ = int(r.defteam_score if home else r.posteam_score) if not pd.isna(r.posteam_score) else None
+        rows.append([int(r.qtr), str(r.time), None if pd.isna(r.down) else int(r.down), None if pd.isna(r.ydstogo) else int(r.ydstogo),
+                     None if pd.isna(r.yardline_100) else int(r.yardline_100), "H" if home else "A", hs, as_,
+                     None if pd.isna(r.home_timeouts_remaining) else int(r.home_timeouts_remaining),
+                     None if pd.isna(r.away_timeouts_remaining) else int(r.away_timeouts_remaining), typ, r.desc,
+                     None if pd.isna(r.wp) else round(float(r.wp if home else 1 - r.wp), 3)])
+    first = g.iloc[0]
+    final = g.iloc[-1]
+    return {"id": game_id, "league": "nfl", "title": title, "home": first.home_team, "away": first.away_team,
+            "week": int(first.week), "final": f"{first.away_team} {int(final.total_away_score)}, {first.home_team} {int(final.total_home_score)}",
+            "plays": rows}
+
+
+CFB_TYPE = lambda t: ("punt" if str(t).startswith("Punt") else "fg" if "Field Goal" in str(t) else "kickoff" if "Kickoff" in str(t)
+                      else "timeout" if t == "Timeout" else "run" if str(t).startswith("Rush") else
+                      "pass" if str(t).startswith("Pass") or str(t) in ("Sack", "Interception Return") else "other")
+
+
+def cfb_replay(team, week, title):
+    g = c26[((c26.home == team) | (c26.away == team)) & (c26.week == week)]
+    rows = []
+    for r in g.itertuples():
+        home = r.pos_team == r.home
+        rows.append([int(r.period), f"{int(r.clock_minutes)}:{int(r.clock_seconds):02d}", None if pd.isna(r.down) or r.down < 1 else int(r.down),
+                     None if pd.isna(r.distance) else int(r.distance), None if pd.isna(r.yards_to_goal) else int(r.yards_to_goal),
+                     "H" if home else "A", int(r.pos_team_score if home else r.def_pos_team_score), int(r.def_pos_team_score if home else r.pos_team_score),
+                     None, None, CFB_TYPE(r.play_type), str(r.play_text)[:140],
+                     None if pd.isna(r.wp_before) else round(float(r.wp_before if home else 1 - r.wp_before), 3)])
+    first = g.iloc[0]
+    last = rows[-1]
+    return {"id": f"cfb-{team}-{week}", "league": "cfb", "title": title, "home": first.home[:10], "away": first.away[:10],
+            "week": int(week), "final": f"{first.away} {last[7]}, {first.home} {last[6]}", "plays": rows}
+
+
+def gid(week, team):
+    g = nfl26[(nfl26.week == week) & ((nfl26.home_team == team) | (nfl26.away_team == team))]
+    return g.game_id.iloc[0]
+
+
+replays = [
+    nfl_replay(gid(2, "NYJ"), "Packers at Jets: the 4th & 1 and overtime"),
+    nfl_replay(gid(4, "PHI"), "Rams at Eagles: the 4th & goal and the comeback"),
+    nfl_replay(gid(5, "WAS"), "Giants at Commanders: the overtime tie"),
+    nfl_replay(gid(3, "IND"), "Texans at Colts: the late field goal"),
+    nfl_replay(gid(1, "CHI"), "Bears at Panthers: the 59-point shootout"),
+    cfb_replay("Texas", 2, "Ohio State at Texas: the goal-line stand"),
+    cfb_replay("Kentucky", 6, "LSU at Kentucky: the punt and the OT two-pointer"),
+]
+print("  replays:", [(r["title"][:25], len(r["plays"])) for r in replays])
+
 # ---------------------------------------------------------------- write
 
 
@@ -759,6 +863,7 @@ def write(name, var, obj):
 
 write("nfl.js", "NFL_DATA", nfl)
 write("cfb.js", "CFB_DATA", cfbd)
+write("replays.js", "REPLAY_GAMES", replays)
 (OUT / "moments.js").write_text(
     "// Generated by scripts/build_data.py — do not edit by hand.\n"
     f"const AUTO_MOMENTS = {json.dumps(moments, separators=(',', ':'), ensure_ascii=False)};\n"

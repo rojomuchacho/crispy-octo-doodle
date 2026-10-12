@@ -11,6 +11,8 @@ const STREAK_FOR_BONUS = 3;
 const LEAGUE_NAME = { nfl: "NFL", cfb: "College" };
 
 const $ = (id) => document.getElementById(id);
+const pct = (p) => `${(p * 100).toFixed(1)}%`;
+const signed = (x, d = 2) => `${x >= 0 ? "+" : ""}${x.toFixed(d)}`;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const state = {
@@ -235,6 +237,7 @@ function renderHome() {
   $("clock-toggle").checked = state.clockOn;
   const best = loadBest();
   $("best-score").textContent = best ? `HI-SCORE (${LEAGUE_NAME[state.league]}): ${best.toLocaleString()}` : "";
+  renderDaily();
   $("real-blurb").textContent = `${realPool().length} hand-picked ${LEAGUE_NAME[state.league]} calls from the 2026 season, plus a bank of ${AUTO_MOMENTS.filter((m) => m.league === state.league).length} high-stakes 4th downs pulled from 2026 play-by-play. Make your decision, then see what the coach did, how it played out, and what the win-probability model says.`;
   const list = $("category-list");
   list.innerHTML = "";
@@ -421,7 +424,7 @@ function renderScoreboard(sit, target = $("scoreboard")) {
       ? `<span class="unknown">TO: ?</span>`
       : [0, 1, 2].map((i) => `<span class="${i < n ? "on" : ""}"></span>`).join("");
     return `<div class="team ${who}">
-      <div class="name">${teamLabel(sit, who)}${sit.teams && who === "us" ? " (you)" : ""}</div>
+      <div class="name">${teamLabel(sit, who)}${sit.teams && who === "us" && !sit.neutral ? " (you)" : ""}</div>
       <div class="pts">${sit.score[who]}</div>
       <div class="tos" title="${n == null ? "timeouts not reported" : `${n} timeouts`}">${tos}</div>
       <div class="ball">${sit.possession === who ? "● ball" : ""}</div>
@@ -568,7 +571,7 @@ function renderScenario() {
   state.gameSecs = state.live.clockRunning ? parseGameClock(state.live.clock) : null;
   // The two-minute warning (clock stopped at 2:00) resets the play clock to 25.
   state.timeLeft = !state.live.clockRunning && state.live.clock === "2:00" ? PLAY_CLOCK_SHORT : PLAY_CLOCK_SECS;
-  $("progress-text").textContent = state.mode === "real"
+  $("progress-text").textContent = state.mode === "daily" ? `Daily call · ${todayKey()} · ${sc.game}` : state.mode === "real"
     ? `Real Moment ${state.index + 1} of ${state.queue.length} · ${sc.game}`
     : `Situation ${state.index + 1} of ${state.queue.length}`;
   renderHud();
@@ -632,6 +635,7 @@ function choose(sc, picked, pickedBtn, reason) {
   renderHud();
 
   if (sc.real) renderRealCard(sc, picked);
+  if (state.mode === "daily") { recordDaily(picked ? picked.grade : "bad"); renderDaily(); }
   const lesson = $("lesson");
   lesson.innerHTML = `<b>Coaching point:</b> ${sc.lesson}`;
   lesson.classList.remove("hidden");
@@ -665,6 +669,40 @@ function numbersBlock(sc) {
     model = `<p><b>Model:</b> ${Object.entries(values).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${label[k]} ${pct(v)}`).join(" · ")} win probability. 4th & ${st.distance} converts ${Math.round(conv * 100)}% in real ${sc.league === "nfl" ? "NFL" : "college"} play-by-play.</p>`;
   }
   return `<p><b>By the numbers:</b> ${parts.join("; ") || "from 2026 play-by-play"}.</p>${model}`;
+}
+
+// ---------- Daily call ----------
+// One real 2026 decision per day, the same for everyone on that date.
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+function dailyMoment() {
+  const pool = autoPool();
+  if (!pool.length) return null;
+  let h = 0;
+  for (const c of todayKey() + state.league) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return pool[h % pool.length];
+}
+const dailyKey = () => `headset-daily-${state.league}`;
+function loadDaily() { try { return JSON.parse(loadPref(dailyKey()) || "null") || { streak: 0, best: 0, last: null, lastResult: null }; } catch { return { streak: 0, best: 0, last: null }; } }
+function renderDaily() {
+  const m = dailyMoment();
+  const d = loadDaily();
+  $("daily-title").textContent = `Daily call · ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  $("daily-blurb").textContent = m ? `${m.title}. ${m.game}. One real 2026 decision a day, the same for everyone. Match the model's best call to keep your streak.` : "No decisions available.";
+  const played = d.last === todayKey();
+  $("start-daily").textContent = played ? "▶ Replay today's call" : "▶ Make today's call";
+  $("daily-streak").textContent = `STREAK: ${d.streak} · BEST: ${d.best}${played ? ` · today: ${d.lastResult === "best" ? "✓" : "✗"}` : ""}`;
+}
+function recordDaily(grade) {
+  const d = loadDaily();
+  if (d.last === todayKey()) return; // replays don't change the streak
+  const y = new Date(Date.now() - 86400000);
+  const yKey = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+  const won = grade === "best";
+  d.streak = won ? (d.last === yKey && d.lastResult === "best" ? d.streak + 1 : 1) : 0;
+  d.best = Math.max(d.best, d.streak);
+  d.last = todayKey();
+  d.lastResult = won ? "best" : "miss";
+  savePref(dailyKey(), JSON.stringify(d));
 }
 
 function renderRealCard(sc, picked) {
@@ -710,8 +748,8 @@ function renderResults() {
   const accuracy = state.results.reduce((sum, r) => sum + (r.picked ? POINTS[r.picked.grade] : 0), 0);
   const pct = Math.round((accuracy / (state.queue.length * POINTS.best)) * 100);
   const [letter, title] = rating(pct);
-  const isHigh = state.mode !== "real" && state.score > loadBest();
-  if (state.mode !== "real") saveBest(state.score);
+  const isHigh = state.mode === "random" && state.score > loadBest();
+  if (state.mode === "random") saveBest(state.score);
   $("grade-letter").textContent = letter;
   $("grade-letter").className = `grade-box g-${letter}`;
   const stars = pct >= 90 ? 3 : pct >= 65 ? 2 : pct >= 40 ? 1 : 0;
@@ -813,6 +851,7 @@ document.querySelectorAll("[data-nav]").forEach((b) => {
 $("start-all").onclick = () => startGame(leaguePool());
 $("start-real").onclick = () => startGame(realPool(), "real");
 $("start-auto").onclick = () => startGame(shuffle(autoPool()).slice(0, GAME_LENGTH), "real");
+$("start-daily").onclick = () => { const m = dailyMoment(); if (m) startGame([m], "daily"); };
 $("next-btn").onclick = nextScenario;
 $("timeout-btn").onclick = callTimeout;
 $("audible-btn").onclick = qbAudible;

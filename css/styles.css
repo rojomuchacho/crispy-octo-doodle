@@ -648,3 +648,23 @@ b.pos, b.neg { font-weight: normal; }
 .btn-row.left { justify-content: flex-start; padding-bottom: 0; }
 .numbers-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 20px; }
 .credits a { color: var(--cyan); }
+
+/* ================= Companion, daily, season ================= */
+.live-card .drive-list { margin-top: 10px; }
+.live-status.warn { color: var(--accent); }
+.live-prompt { border-color: var(--accent); box-shadow: 6px 6px 0 #000, 0 0 22px rgba(255,230,0,.35); }
+.live-prompt h2 { font-size: 0.65rem; color: var(--text); }
+.live-games { margin-top: 14px; }
+.drive-card.active { border-color: var(--accent); }
+#live-countdown { color: var(--accent); }
+.season-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 6px 0 4px; }
+.season-weeks { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 8px; }
+.season-weeks li { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; align-items: center; gap: 10px; background: #000; border: 3px solid var(--panel-2); padding: 8px 10px; }
+.season-weeks .wk { font-family: var(--pixel); font-size: 0.5rem; color: var(--muted); }
+.season-weeks .res { font-family: var(--pixel); font-size: 0.6rem; }
+.season-weeks .res.W { color: var(--best); }
+.season-weeks .res.L { color: var(--bad); }
+.season-weeks .res.T { color: var(--accent); }
+.season-weeks .real { display: block; font-size: 0.95rem; color: var(--muted); }
+.season-weeks .tool-btn { white-space: nowrap; }
+#live .field-caption { display: none; }
