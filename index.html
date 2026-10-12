@@ -4,11 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Headset: Game Management Trainer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <header class="topbar">
-    <button class="brand" data-nav="home">🎧 HEADSET</button>
+    <button class="brand" data-nav="home">HEADSET</button>
     <nav>
       <button data-nav="home">Play</button>
       <button data-nav="lab">Clock Lab</button>
@@ -20,6 +23,7 @@
     <!-- Home -->
     <section id="home" class="view">
       <h1>You're on the headset, Coach.</h1>
+      <p class="press-start blink">▶ Press start</p>
       <p class="sub">Game-management situations from the NFL and college football. Make the call, then learn why.</p>
       <div class="league-toggle" role="tablist" aria-label="League">
         <button data-league="nfl" role="tab">NFL</button>
@@ -29,12 +33,12 @@
         <span class="tag">2026 season</span>
         <h2>Real Moments</h2>
         <p id="real-blurb">Real calls from this season. Make your decision, then see what the coach actually did and how it played out.</p>
-        <button class="primary" id="start-real">Take the headset</button>
+        <button class="primary" id="start-real">▶ Take the headset</button>
       </div>
       <div class="card">
         <h2>Play a game</h2>
         <p>10 random situations across every category. Best answer = 10 pts, acceptable = 5.</p>
-        <button class="primary" id="start-all">Kick off</button>
+        <button class="primary" id="start-all">▶ Kick off</button>
         <p class="best-score" id="best-score"></p>
       </div>
       <div class="card">
@@ -68,7 +72,7 @@
         <h2>Film review</h2>
         <div id="review"></div>
       </div>
-      <button class="primary" id="play-again">Play again</button>
+      <button class="primary" id="play-again">▶ Continue?</button>
     </section>
 
     <!-- Clock Lab -->

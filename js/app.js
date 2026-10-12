@@ -49,7 +49,7 @@ function setLeague(league) {
 function renderHome() {
   setLeague(state.league);
   const best = loadBest();
-  $("best-score").textContent = best ? `Your best (${LEAGUE_NAME[state.league]}): ${best}%` : "";
+  $("best-score").textContent = best ? `HI-SCORE (${LEAGUE_NAME[state.league]}): ${best}%` : "";
   $("real-blurb").textContent = `${realPool().length} real ${LEAGUE_NAME[state.league]} calls from the 2026 season. Make your decision, then see what the coach actually did and how it played out.`;
   const list = $("category-list");
   list.innerHTML = "";
