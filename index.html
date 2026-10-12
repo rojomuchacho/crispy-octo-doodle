@@ -43,6 +43,12 @@
         </div>
         <label class="switch"><input type="checkbox" id="clock-toggle" checked /> <span>Real clock: play clock, game clock, headset cutoff, timeouts</span></label>
       </div>
+      <div class="card feature sim-card" id="sim-menu-card">
+        <span class="tag">New · Simulation</span>
+        <h2>Drive Simulator</h2>
+        <p>Call every snap of a late-game drive. Pick the play and the tempo, manage timeouts, and the clock, downs and score play out under the real rules. The other team gets the ball back if you leave them time.</p>
+        <div class="drive-list" id="sim-list"></div>
+      </div>
       <div class="modes">
         <div class="card feature mode">
           <span class="tag">2026 season</span>
@@ -97,6 +103,7 @@
           <div class="clock-tools" id="clock-tools">
             <span class="led on" id="headset-led">Headset on</span>
             <button class="tool-btn" id="timeout-btn">Call timeout</button>
+            <button class="tool-btn audible hidden" id="audible-btn">Let QB audible</button>
             <span class="clock-note hidden" id="clock-note" role="status"></span>
           </div>
           <div id="options" class="options"></div>
@@ -107,7 +114,45 @@
           </div>
         </div>
       </div>
-      <div id="banner" class="banner hidden" aria-hidden="true"></div>
+    </section>
+
+    <!-- Drive simulator -->
+    <section id="sim" class="view hidden">
+      <div class="hud sim-hud">
+        <div class="hud-item"><span class="hud-label">Drive</span><span class="hud-value small" id="sim-title"></span></div>
+        <div class="hud-item"><span class="hud-label" id="sim-pc-label">Play clock</span><span class="hud-value" id="sim-pc">40</span></div>
+        <span class="led on" id="sim-led">Headset on</span>
+        <span class="clock-note hidden" id="sim-note" role="status"></span>
+      </div>
+      <div class="field" id="sim-field"></div>
+      <div class="play-grid">
+        <div class="play-left">
+          <div class="scoreboard" id="sim-scoreboard"></div>
+          <div class="card log-card">
+            <h2>Play-by-play</h2>
+            <ol class="sim-log" id="sim-log"></ol>
+          </div>
+        </div>
+        <div class="play-right">
+          <div id="sim-panel">
+            <div class="tempo" role="group" aria-label="Tempo">
+              <span class="hud-label">Tempo</span>
+              <button data-tempo="fast">Snap fast</button>
+              <button data-tempo="normal">Normal</button>
+              <button data-tempo="milk">Milk it</button>
+            </div>
+            <p class="fine" id="tempo-desc"></p>
+            <div class="sim-calls" id="sim-calls"></div>
+            <div class="clock-tools">
+              <button class="tool-btn" id="sim-timeout">Call timeout</button>
+              <button class="tool-btn hidden" id="sim-break">Break the huddle</button>
+              <button class="tool-btn audible hidden" id="sim-audible">Let QB audible</button>
+            </div>
+            <p class="fine keys">Keys: <kbd>1</kbd>–<kbd>9</kbd> call a play · <kbd>T</kbd> timeout · <kbd>A</kbd> audible</p>
+          </div>
+          <div id="sim-end" class="card sim-end hidden"></div>
+        </div>
+      </div>
     </section>
 
     <!-- Results -->
@@ -211,10 +256,12 @@
       </div>
     </section>
   </main>
+  <div id="banner" class="banner hidden" aria-hidden="true"></div>
 
   <script defer src="js/scenarios.js"></script>
   <script defer src="js/real-moments.js"></script>
   <script defer src="js/clocklab.js"></script>
   <script defer src="js/app.js"></script>
+  <script defer src="js/sim.js"></script>
 </body>
 </html>

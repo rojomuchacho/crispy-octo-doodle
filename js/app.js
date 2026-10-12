@@ -320,6 +320,23 @@ function renderClock() {
     led.textContent = on ? `Headset on · cuts out at :${HEADSET_CUTOFF}` : "Headset off";
   }
   renderTimeoutButton();
+  lockCalls(isLocked());
+}
+
+// With the headset off you can't get a call to the field: only a timeout or a QB audible.
+const isLocked = () => state.clockOn && !state.answered && state.huddle === 0 && state.timeLeft <= HEADSET_CUTOFF;
+function lockCalls(locked) {
+  document.querySelectorAll("#options .option").forEach((b) => {
+    if (!state.answered) b.disabled = locked;
+    b.classList.toggle("locked", locked);
+  });
+  $("audible-btn").classList.toggle("hidden", !locked);
+}
+function qbAudible() {
+  if (!isLocked()) return;
+  const btns = [...document.querySelectorAll("#options .option")];
+  const btn = btns[Math.floor(Math.random() * btns.length)];
+  choose(state.queue[state.index], btn._opt, btn, "audible");
 }
 
 function renderTimeoutButton() {
@@ -360,7 +377,7 @@ function spotText(yardLine) {
 }
 const teamLabel = (sit, who) => (sit.teams ? sit.teams[who] : who === "us" ? "YOU" : "OPP");
 
-function renderScoreboard(sit) {
+function renderScoreboard(sit, target = $("scoreboard")) {
   const team = (who) => {
     const n = sit.timeouts[who];
     const tos = n == null
@@ -382,7 +399,7 @@ function renderScoreboard(sit) {
   const qtr = sit.quarter <= 4 ? `Q${sit.quarter}` : "OT";
   const clock = sit.clock == null ? "—" : `${sit.clockApprox ? "≈" : ""}${sit.clock}`;
   const clockState = sit.clockRunning === true ? "clock running" : sit.clockRunning === false ? "clock stopped" : "";
-  $("scoreboard").innerHTML = `
+  target.innerHTML = `
     ${team("us")}
     <div class="center">
       <div class="qtr">${qtr}</div>
@@ -414,8 +431,8 @@ const DEFENSE = [
   [6, 10, "CB"], [6, 90, "CB"], [12, 36, "S"], [12, 64, "S"],
 ];
 
-function renderField(sit) {
-  const field = $("field");
+function renderField(sit, target = $("field")) {
+  const field = target;
   if (sit.coinToss) {
     field.className = "field toss";
     field.innerHTML = `<div class="coin" aria-hidden="true"></div><div class="field-caption">Coin toss</div>`;
@@ -544,13 +561,12 @@ function choose(sc, picked, pickedBtn, reason) {
   stopClock();
   renderTimeoutButton();
   const grade = picked ? picked.grade : "bad";
-  // A call made after the headset cut out still counts, but earns no speed bonus.
-  const late = state.clockOn && picked && state.huddle === 0 && state.timeLeft <= HEADSET_CUTOFF;
+  $("audible-btn").classList.add("hidden");
 
   let gained = 0;
   if (grade === "best") state.streak++; else state.streak = 0;
   if (grade !== "bad") {
-    const beforeCutoff = state.huddle > 0 ? 0 : Math.max(0, state.timeLeft - HEADSET_CUTOFF);
+    const beforeCutoff = state.huddle > 0 || reason === "audible" ? 0 : Math.max(0, state.timeLeft - HEADSET_CUTOFF);
     const speed = state.clockOn ? Math.round((beforeCutoff / (PLAY_CLOCK_SECS - HEADSET_CUTOFF)) * 50) : 0;
     const mult = state.streak >= STREAK_FOR_BONUS ? 2 : 1;
     gained = (POINTS[grade] + Math.min(50, speed)) * mult;
@@ -570,7 +586,7 @@ function choose(sc, picked, pickedBtn, reason) {
 
   const bannerText = reason === "expired" ? "TIME EXPIRED" : picked ? BANNER[grade] : BANNER.timeout;
   showBanner(bannerText, grade, gained);
-  if (late) flashNote("Late call: headset was off, so no speed bonus");
+  if (reason === "audible") flashNote("No call got in. Your QB audibled on his own.");
   (picked ? SFX[grade] : SFX.whistle)();
   animateField(sc, grade);
   renderHud();
@@ -660,7 +676,7 @@ function renderResults() {
     const best = sc.options.find((o) => o.grade === "best");
     let extra = picked && picked.grade === "best" ? "" : `<div class="fine">Best call: ${best.text}</div>`;
     if (sc.real) extra += `<div class="fine">${sc.real.coach}'s call: ${sc.options.find((o) => o.real).text}</div>`;
-    const choice = picked ? picked.text : reason === "expired" ? "Nothing: the game clock ran out" : "Delay of game (play clock ran out)";
+    const choice = picked ? (reason === "audible" ? `QB audible: ${picked.text}` : picked.text) : reason === "expired" ? "Nothing: the game clock ran out" : "Delay of game (play clock ran out)";
     return `<div class="review-item"><span class="mark">${marks[picked ? picked.grade : "bad"]}</span><b>${sc.title}</b> — you chose: ${choice}${extra}</div>`;
   }).join("");
   stopMusic();
@@ -709,6 +725,7 @@ $("start-all").onclick = () => startGame(leaguePool());
 $("start-real").onclick = () => startGame(realPool(), "real");
 $("next-btn").onclick = nextScenario;
 $("timeout-btn").onclick = callTimeout;
+$("audible-btn").onclick = qbAudible;
 $("play-again").onclick = () => { startMusic(); renderHome(); };
 $("music-toggle").onclick = () => {
   state.musicOn = !state.musicOn;

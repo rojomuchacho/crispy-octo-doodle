@@ -549,3 +549,57 @@ kbd { font-family: var(--pixel); font-size: 0.55rem; background: #000; border: 2
 }
 .endzone span { text-orientation: upright; letter-spacing: 2px; }
 .endzone.left span { transform: none; }
+.option.locked:not(.best):not(.ok):not(.bad) { opacity: 0.45; cursor: not-allowed; }
+.tool-btn.audible { color: var(--pink); border-color: var(--pink); }
+.tool-btn.audible:hover { background: var(--pink); color: #000; }
+
+/* ================= Drive simulator ================= */
+.sim-card { display: block; }
+.drive-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin-top: 12px; }
+.drive-card {
+  text-align: left; display: flex; flex-direction: column; gap: 8px;
+  background: #000; color: var(--text); border: 3px solid var(--pink); padding: 12px; box-shadow: 4px 4px 0 #000;
+}
+.drive-card:hover { border-color: var(--accent); transform: translate(-2px, -2px); box-shadow: 6px 6px 0 #000; }
+.drive-title { font-family: var(--pixel); font-size: 0.6rem; color: var(--accent); text-transform: uppercase; line-height: 1.6; }
+.drive-blurb { font-size: 1.05rem; color: var(--muted); }
+.hud-value.small { font-size: 0.55rem; line-height: 1.6; }
+.sim-hud { justify-content: space-between; }
+
+.tempo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.tempo button {
+  font-family: var(--pixel); font-size: 0.5rem; text-transform: uppercase;
+  background: #000; color: var(--muted); border: 3px solid var(--muted); padding: 8px 10px;
+}
+.tempo button.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.sim-calls { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 10px; margin: 10px 0 4px; }
+.call {
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  background: #000; color: var(--text); border: 3px solid var(--cyan); padding: 10px; box-shadow: 4px 4px 0 #000;
+}
+.call span { font-family: var(--pixel); font-size: 0.55rem; text-transform: uppercase; line-height: 1.5; color: var(--cyan); }
+.call small { font-size: 0.95rem; color: var(--muted); }
+.call:hover:not(:disabled) { border-color: var(--accent); transform: translate(-2px, -2px); box-shadow: 6px 6px 0 #000; }
+.call:hover:not(:disabled) span { color: var(--accent); }
+.call:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.log-card { margin-top: 18px; }
+.sim-log { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.sim-log li { padding: 6px 0; border-bottom: 2px dotted var(--panel-2); }
+.sim-log li.good { color: var(--best); }
+.sim-log li.bad { color: var(--bad); }
+.sim-log li.info { color: var(--muted); }
+.log-clock { font-family: var(--pixel); font-size: 0.45rem; color: var(--accent); margin-right: 10px; }
+
+.sim-end { margin-top: 10px; }
+.sim-end-head { font-size: 0.8rem; }
+.sim-end-head.best { color: var(--best); }
+.sim-end-head.ok { color: var(--accent); }
+.sim-end-head.bad { color: var(--bad); }
+.sim-end h3 { font-family: var(--pixel); font-size: 0.6rem; color: var(--pink); text-transform: uppercase; }
+.sim-score { font-size: 1.2rem; }
+.film { list-style: none; padding: 0; }
+.film li.bad { color: var(--bad); }
+.film li.good { color: var(--best); }
+.primary.alt { background: var(--cyan); }
+.btn-row { gap: 18px; flex-wrap: wrap; }

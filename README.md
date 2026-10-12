@@ -6,6 +6,7 @@ A browser game that teaches fans to think like a head coach: clock management, 4
 Open `index.html` in a browser. No build step or dependencies.
 
 ## Modes
+- **Drive Simulator**: call every snap of a late-game drive (two-minute drill, four-minute offense, end of half, down eight). Choose the play and tempo, use timeouts, and the clock, downs and score play out under NFL or college rules. The opponent gets the ball back if you leave time, and a film room grades your clock management at the end. Play outcomes use game-style odds, not a statistical model.
 - **Real Moments (2026 season)**: real calls from this season's NFL and college games. Make your decision, then see what the coach actually did, how it played out, and sources.
 - **Play**: 10 random situations (or practice one category). Each shows a live scoreboard and field, you make the call, then get graded (Best / OK / Miss) with explanations and a coaching point.
 - **Clock Lab**: enter clock, down, and opponent timeouts to see whether you can kneel out the game, snap by snap.
@@ -13,5 +14,7 @@ Open `index.html` in a browser. No build step or dependencies.
 
 ## Adding scenarios
 Add entries to `SCENARIOS` in `js/scenarios.js`. `yardLine` is measured from the offense's own goal line (0–100); `possession` is `"us"` or `"them"`. Set `leagues: ["nfl"]` or `["cfb"]` for rules-specific scenarios (omit for both).
+
+Drive scenarios live in `DRIVES` in `js/sim.js`.
 
 Real moments live in `js/real-moments.js`. Mark the option the real coach chose with `real: true`, cite `sources`, and leave unreported details (clock, timeouts, down) as `null` rather than guessing.
