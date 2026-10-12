@@ -475,9 +475,9 @@ function renderField(sit, target = $("field")) {
   if (!sit.pat && !sit.goalToGo && sit.distance != null && los + sit.distance < 100) {
     parts.push(`<div class="marker ltg" style="left:${fieldPct(los + sit.distance)}%"><span class="chain">${sit.distance}</span></div>`);
   }
-  const place = (list, color, side) => list.map(([dx, top, pos]) => {
+  const place = (list, color, side) => list.map(([dx, top, pos], i) => {
     const y = Math.min(109, Math.max(-9, los + dx));
-    return `<span class="player ${side}" style="left:${fieldPct(y)}%;top:${top}%;--team:${color}"><i>${pos}</i></span>`;
+    return `<span class="player ${side}" data-i="${i}" style="left:${fieldPct(y)}%;top:${top}%;--team:${color}"><i>${pos}</i></span>`;
   }).join("");
   parts.push(place(OFFENSE, offColor, "off"), place(DEFENSE, defColor, "def"));
   parts.push(`<div class="football" id="football" style="left:${fieldPct(los)}%"></div>`);

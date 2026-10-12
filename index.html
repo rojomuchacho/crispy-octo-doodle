@@ -46,7 +46,7 @@
       <div class="card feature sim-card" id="sim-menu-card">
         <span class="tag">New · Simulation</span>
         <h2>Drive Simulator</h2>
-        <p>Call every snap of a late-game drive. Pick the play and the tempo, manage timeouts, and the clock, downs and score play out under the real rules. The other team gets the ball back if you leave them time.</p>
+        <p>Play out a late-game situation snap by snap. On offense, pick the play and tempo; on defense, pick the coverage and manage your timeouts to get the ball back. Every play is animated, and possession flips until the clock hits 0:00.</p>
         <div class="drive-list" id="sim-list"></div>
       </div>
       <div class="modes">
@@ -135,6 +135,9 @@
         </div>
         <div class="play-right">
           <div id="sim-panel">
+            <span class="side-tag off" id="sim-side">You're on offense</span>
+            <p class="fine snap-hint" id="snap-hint"></p>
+            <div id="tempo-wrap">
             <div class="tempo" role="group" aria-label="Tempo">
               <span class="hud-label">Tempo</span>
               <button data-tempo="fast">Snap fast</button>
@@ -142,13 +145,14 @@
               <button data-tempo="milk">Milk it</button>
             </div>
             <p class="fine" id="tempo-desc"></p>
+            </div>
             <div class="sim-calls" id="sim-calls"></div>
             <div class="clock-tools">
               <button class="tool-btn" id="sim-timeout">Call timeout</button>
               <button class="tool-btn hidden" id="sim-break">Break the huddle</button>
               <button class="tool-btn audible hidden" id="sim-audible">Let QB audible</button>
             </div>
-            <p class="fine keys">Keys: <kbd>1</kbd>–<kbd>9</kbd> call a play · <kbd>T</kbd> timeout · <kbd>A</kbd> audible</p>
+            <p class="fine keys">Keys: <kbd>1</kbd>–<kbd>9</kbd> make a call · <kbd>T</kbd> timeout · <kbd>A</kbd> audible / base</p>
           </div>
           <div id="sim-end" class="card sim-end hidden"></div>
         </div>
@@ -262,6 +266,7 @@
   <script defer src="js/real-moments.js"></script>
   <script defer src="js/clocklab.js"></script>
   <script defer src="js/app.js"></script>
+  <script defer src="js/animate.js"></script>
   <script defer src="js/sim.js"></script>
 </body>
 </html>

@@ -603,3 +603,16 @@ kbd { font-family: var(--pixel); font-size: 0.55rem; background: #000; border: 2
 .film li.good { color: var(--best); }
 .primary.alt { background: var(--cyan); }
 .btn-row { gap: 18px; flex-wrap: wrap; }
+
+/* ---------- Animation + defense ---------- */
+.football.flying { animation: none; transition: none; }
+.player.down { transform: translate(-50%, -50%) scaleY(0.6); }
+.drive-card.defense { border-color: var(--cyan); }
+.drive-side { font-family: var(--pixel); font-size: 0.45rem; text-transform: uppercase; color: var(--pink); }
+.drive-card.defense .drive-side { color: var(--cyan); }
+.side-tag { display: inline-block; font-family: var(--pixel); font-size: 0.6rem; text-transform: uppercase; padding: 8px 10px; background: #000; border: 3px solid currentColor; margin-top: 10px; }
+.side-tag.off { color: var(--pink); }
+.side-tag.def { color: var(--cyan); }
+.snap-hint:empty { display: none; }
+.call.def { border-color: var(--pink); }
+.call.def span { color: var(--pink); }
