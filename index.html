@@ -20,7 +20,17 @@
     <!-- Home -->
     <section id="home" class="view">
       <h1>You're on the headset, Coach.</h1>
-      <p class="sub">Real NFL game-management situations. Make the call, then learn why the best coaches make it.</p>
+      <p class="sub">Game-management situations from the NFL and college football. Make the call, then learn why.</p>
+      <div class="league-toggle" role="tablist" aria-label="League">
+        <button data-league="nfl" role="tab">NFL</button>
+        <button data-league="cfb" role="tab">College</button>
+      </div>
+      <div class="card feature">
+        <span class="tag">2026 season</span>
+        <h2>Real Moments</h2>
+        <p id="real-blurb">Real calls from this season. Make your decision, then see what the coach actually did and how it played out.</p>
+        <button class="primary" id="start-real">Take the headset</button>
+      </div>
       <div class="card">
         <h2>Play a game</h2>
         <p>10 random situations across every category. Best answer = 10 pts, acceptable = 5.</p>
@@ -43,6 +53,7 @@
         <h2 id="sc-title"></h2>
         <p id="sc-prompt"></p>
         <div id="options" class="options"></div>
+        <div id="real-card" class="real-card hidden"></div>
         <div id="lesson" class="lesson hidden"></div>
         <button class="primary hidden" id="next-btn">Next situation →</button>
       </div>
@@ -52,6 +63,7 @@
     <section id="results" class="view hidden">
       <h1 id="rating"></h1>
       <p class="sub" id="final-score"></p>
+      <p class="sub" id="real-summary"></p>
       <div class="card">
         <h2>Film review</h2>
         <div id="review"></div>
@@ -75,14 +87,32 @@
         <label class="check"><input type="checkbox" id="lab-warning" /> Two-minute warning still to come</label>
       </div>
       <div class="card" id="lab-result"></div>
-      <p class="fine">Assumes a 40-second play clock, ~2 seconds per kneel, and that the defense calls a timeout after every kneel while it has one.</p>
+      <p class="fine">Assumes a 40-second play clock, ~2 seconds per kneel, and that the defense calls a timeout after every kneel while it has one. The math is the same in the NFL and college: both use a 40-second play clock and a two-minute stoppage.</p>
     </section>
 
     <!-- Cheat sheet -->
     <section id="sheet" class="view hidden">
       <h1>Cheat Sheet</h1>
-      <div class="card">
-        <h2>Clock rules</h2>
+      <div class="card" data-only="cfb">
+        <h2>College rules that change decisions</h2>
+        <ul>
+          <li><b>First downs:</b> the clock keeps running after a first down, <i>except</i> in the last 2:00 of each half, when it stops until the chains are set (since 2023).</li>
+          <li><b>Two-minute timeout:</b> college has had an automatic stoppage at 2:00 of each half since 2024, like the NFL's two-minute warning.</li>
+          <li><b>Tries:</b> snapped from the 3-yard line, for both the PAT kick and a 2-point try (NFL: kick from the 15, 2-point try from the 2).</li>
+          <li><b>Overtime:</b> each team gets a possession from the opponent's 25, with no game clock. Order flips each OT, and each team gets 1 timeout per OT.</li>
+          <li><b>2nd OT:</b> a TD must be followed by a 2-point try. <b>3rd OT+:</b> teams alternate single 2-point plays.</li>
+          <li><b>10-second runoff:</b> applies in the final minute of each half when a foul stops the clock.</li>
+        </ul>
+      </div>
+      <div class="card" data-only="nfl">
+        <h2>NFL overtime</h2>
+        <ul>
+          <li>Regular season: one 10-minute period; since 2025 both teams are guaranteed a possession. Each team gets 2 timeouts.</li>
+          <li>After both teams have had the ball, the next score wins. Still tied at the end of the period, it's a tie.</li>
+        </ul>
+      </div>
+      <div class="card" data-only="nfl">
+        <h2>NFL clock rules</h2>
         <ul>
           <li><b>Incomplete pass / out of bounds:</b> clock stops. Outside the last 2:00 of the 1st half and last 5:00 of the 2nd, out-of-bounds restarts on the ready-for-play signal.</li>
           <li><b>First down:</b> in the NFL the clock does <i>not</i> stop for a first down (unlike college).</li>
@@ -124,6 +154,7 @@
   </main>
 
   <script src="js/scenarios.js"></script>
+  <script src="js/real-moments.js"></script>
   <script src="js/clocklab.js"></script>
   <script src="js/app.js"></script>
 </body>

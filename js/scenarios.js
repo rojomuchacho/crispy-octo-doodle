@@ -1,6 +1,7 @@
 // Scenario data. `yardLine` is measured from the OFFENSE's own goal line (0-100).
 // `possession` is "us" (you call the offense) or "them" (you're the defense).
 // Grades: "best" = 10 pts, "ok" = 5 pts, "bad" = 0 pts.
+// `leagues` limits a scenario to "nfl" or "cfb" rules; omitted means it applies to both.
 
 const CATEGORIES = {
   clock: "Clock Management",
@@ -31,6 +32,7 @@ const SCENARIOS = [
   },
   {
     id: "timeouts-block-kneel",
+    leagues: ["nfl"],
     category: "clock",
     title: "They Still Have Timeouts",
     situation: { quarter: 4, clock: "1:55", score: { us: 20, them: 17 }, possession: "us", down: 1, distance: 10, yardLine: 40, timeouts: { us: 1, them: 2 }, clockRunning: true },
@@ -85,6 +87,7 @@ const SCENARIOS = [
   },
   {
     id: "qb-draw",
+    leagues: ["nfl"],
     category: "clock",
     title: "Fourteen Seconds",
     situation: { quarter: 4, clock: "0:14", score: { us: 17, them: 23 }, possession: "us", down: 1, distance: 10, yardLine: 41, timeouts: { us: 0, them: 1 }, clockRunning: false },
@@ -319,6 +322,7 @@ const SCENARIOS = [
   },
   {
     id: "oob-third-quarter",
+    leagues: ["nfl"],
     category: "rules",
     title: "When Does It Restart?",
     situation: { quarter: 3, clock: "4:30", score: { us: 14, them: 10 }, possession: "us", down: 2, distance: 4, yardLine: 48, timeouts: { us: 3, them: 3 }, clockRunning: false },
@@ -332,5 +336,105 @@ const SCENARIOS = [
         feedback: "It stops briefly to re-spot the ball, then restarts on the ready-for-play signal." },
     ],
     lesson: "Out of bounds only truly 'stops the clock' in the last 2:00 of the 1st half and last 5:00 of the 2nd half. Earlier, it restarts almost immediately.",
+  },
+
+  // ---------- College-only scenarios ----------
+  {
+    id: "cfb-middle-first-down",
+    leagues: ["cfb"],
+    category: "clock",
+    title: "Chains Stop the Clock",
+    situation: { quarter: 4, clock: "0:48", score: { us: 21, them: 24 }, possession: "us", down: 2, distance: 5, yardLine: 45, timeouts: { us: 0, them: 1 }, clockRunning: false },
+    prompt: "No timeouts, need a field goal. The defense is giving you a 12-yard dig over the middle or a 4-yard out to the sideline.",
+    options: [
+      { text: "Take the 12-yard dig — it's a first down", grade: "best",
+        feedback: "In college, a first down in the final two minutes of a half stops the clock until the ball is ready for play. A middle-of-the-field first down costs only a few seconds, and you're 12 yards closer." },
+      { text: "Take the 4-yard out and get out of bounds", grade: "ok",
+        feedback: "Safe for the clock, but you give up 8 yards and still face 3rd down. You don't need the sideline as badly in college as in the NFL." },
+      { text: "Run a draw to catch them in a soft zone", grade: "bad",
+        feedback: "Short of the sticks and in bounds: the clock keeps running and you have to burn a down spiking it." },
+    ],
+    lesson: "College rule: in the last 2:00 of each half, the clock stops on a first down until the chains are set. That makes first downs in the middle of the field a weapon in a college two-minute drill.",
+  },
+  {
+    id: "cfb-first-down-rule",
+    leagues: ["cfb"],
+    category: "rules",
+    title: "First Down, Third Quarter",
+    situation: { quarter: 3, clock: "6:10", score: { us: 17, them: 14 }, possession: "us", down: 1, distance: 10, yardLine: 52, timeouts: { us: 3, them: 3 }, clockRunning: true },
+    prompt: "You just converted a 3rd down with a run that stayed in bounds. What does the clock do?",
+    options: [
+      { text: "Keeps running", grade: "best",
+        feedback: "Correct. Since 2023, college football no longer stops the clock for first downs, except in the last two minutes of each half." },
+      { text: "Stops until the chains are set, then restarts", grade: "bad",
+        feedback: "That's the rule only in the final 2:00 of each half (and the old rule before 2023)." },
+      { text: "Stops until the next snap", grade: "bad",
+        feedback: "First downs never stop the clock until the snap." },
+    ],
+    lesson: "The 2023 change made college games shorter and made running the clock with a lead easier, more like the NFL — except in the last two minutes of each half.",
+  },
+  {
+    id: "cfb-ot-choice",
+    leagues: ["cfb"],
+    category: "situational",
+    title: "Overtime Coin Toss",
+    situation: { quarter: 5, clock: null, score: { us: 24, them: 24 }, possession: null, coinToss: true, timeouts: { us: 1, them: 1 } },
+    prompt: "You win the overtime coin toss. Each team gets a possession from the opponent's 25. What do you choose?",
+    options: [
+      { text: "Defense first", grade: "best",
+        feedback: "The standard call. Going second, you know exactly what you need: a field goal, a touchdown, or whether to use all four downs." },
+      { text: "Offense first", grade: "ok",
+        feedback: "Some coaches do this to set the tone, but you hand the other team the information advantage." },
+    ],
+    lesson: "In college OT, possessions are untimed. Going second means you never have to guess — so almost every coach chooses defense first.",
+  },
+  {
+    id: "cfb-2ot-rule",
+    leagues: ["cfb"],
+    category: "rules",
+    title: "Second Overtime",
+    situation: { quarter: 5, clock: null, score: { us: 36, them: 38 }, possession: "us", down: 0, distance: 0, yardLine: 97, timeouts: { us: 1, them: 1 }, pat: true },
+    prompt: "Second overtime. They scored a TD and made the 2-point try. You just scored a TD. Your options?",
+    options: [
+      { text: "You must go for two", grade: "best",
+        feedback: "Correct. Starting with the second overtime, a team that scores a touchdown must attempt a 2-point conversion. No PAT kicks." },
+      { text: "Kick the extra point to tie and go to a third OT", grade: "bad",
+        feedback: "Not allowed. From the 2nd OT on, the PAT kick is off the table." },
+    ],
+    lesson: "College OT: 1st OT — normal PAT allowed. 2nd OT — TDs must be followed by a 2-point try. 3rd OT and beyond — teams just alternate 2-point plays.",
+  },
+  {
+    id: "cfb-3ot-rule",
+    leagues: ["cfb"],
+    category: "rules",
+    title: "Triple Overtime",
+    situation: { quarter: 5, clock: null, score: { us: 45, them: 45 }, possession: null, coinToss: true, timeouts: { us: 1, them: 1 } },
+    prompt: "Still tied after two overtimes. What happens in the third overtime?",
+    options: [
+      { text: "Teams alternate single 2-point attempts from the 3", grade: "best",
+        feedback: "Correct. From the 3rd OT on, each team runs one 2-point play per period — a shootout." },
+      { text: "Possessions from the 25, must go for two after a TD", grade: "bad",
+        feedback: "That's the 2nd overtime." },
+      { text: "Sudden death — first score wins", grade: "bad",
+        feedback: "That's closer to the NFL. College uses the 2-point shootout." },
+    ],
+    lesson: "Your best 2-point play matters more in college: a long OT game can come down to one call from the 3-yard line.",
+  },
+  {
+    id: "cfb-try-spot",
+    leagues: ["cfb"],
+    category: "rules",
+    title: "Where's the Try?",
+    situation: { quarter: 4, clock: "4:12", score: { us: 26, them: 21 }, possession: "us", down: 0, distance: 0, yardLine: 97, timeouts: { us: 2, them: 3 }, pat: true },
+    prompt: "You just scored to go up 5. In college, where is a 2-point try snapped from?",
+    options: [
+      { text: "The 3-yard line — same as the PAT kick", grade: "best",
+        feedback: "Correct. College snaps all tries from the 3. (The NFL snaps 2-point tries from the 2 and PAT kicks from the 15.)" },
+      { text: "The 2-yard line", grade: "bad",
+        feedback: "That's the NFL." },
+      { text: "The 15-yard line", grade: "bad",
+        feedback: "That's where the NFL snaps PAT kicks." },
+    ],
+    lesson: "Up 5 after a TD, go for two to make it a 7-point game — same logic as the NFL. In college the try is from the 3 and the PAT kick is a chip shot, but the margin math doesn't change.",
   },
 ];

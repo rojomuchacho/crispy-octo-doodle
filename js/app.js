@@ -1,10 +1,10 @@
 const POINTS = { best: 10, ok: 5, bad: 0 };
 const GRADE_LABEL = { best: "BEST", ok: "OK", bad: "MISS" };
 const GAME_LENGTH = 10;
-const STORAGE_KEY = "headset-best";
+const LEAGUE_NAME = { nfl: "NFL", cfb: "College" };
 
 const $ = (id) => document.getElementById(id);
-const state = { queue: [], index: 0, score: 0, results: [] };
+const state = { league: loadPref("headset-league") || "nfl", mode: "random", queue: [], index: 0, score: 0, results: [] };
 
 function show(view) {
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
@@ -21,31 +21,53 @@ function shuffle(arr) {
   return a;
 }
 
-function loadBest() {
-  try { return Number(localStorage.getItem(STORAGE_KEY)) || 0; } catch { return 0; }
+function loadPref(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
 }
-function saveBest(pct) {
-  try { if (pct > loadBest()) localStorage.setItem(STORAGE_KEY, String(pct)); } catch {}
+function savePref(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
 }
+const bestKey = () => `headset-best-${state.league}`;
+function loadBest() { return Number(loadPref(bestKey())) || 0; }
+function saveBest(pct) { if (pct > loadBest()) savePref(bestKey(), String(pct)); }
+
+const leaguePool = () => SCENARIOS.filter((s) => !s.leagues || s.leagues.includes(state.league));
+const realPool = () => REAL_MOMENTS.filter((m) => m.league === state.league);
 
 // ---------- Home ----------
+function setLeague(league) {
+  state.league = league;
+  savePref("headset-league", league);
+  document.body.dataset.league = league;
+  document.querySelectorAll("[data-league]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.league === league);
+    b.setAttribute("aria-selected", b.dataset.league === league);
+  });
+  document.querySelectorAll("[data-only]").forEach((el) => el.classList.toggle("hidden", el.dataset.only !== league));
+}
+
 function renderHome() {
+  setLeague(state.league);
   const best = loadBest();
-  $("best-score").textContent = best ? `Your best: ${best}%` : "";
+  $("best-score").textContent = best ? `Your best (${LEAGUE_NAME[state.league]}): ${best}%` : "";
+  $("real-blurb").textContent = `${realPool().length} real ${LEAGUE_NAME[state.league]} calls from the 2026 season. Make your decision, then see what the coach actually did and how it played out.`;
   const list = $("category-list");
   list.innerHTML = "";
+  const pool = leaguePool();
   Object.entries(CATEGORIES).forEach(([key, label]) => {
-    const count = SCENARIOS.filter((s) => s.category === key).length;
+    const count = pool.filter((s) => s.category === key).length;
+    if (!count) return;
     const b = document.createElement("button");
     b.textContent = `${label} (${count})`;
-    b.onclick = () => startGame(SCENARIOS.filter((s) => s.category === key));
+    b.onclick = () => startGame(pool.filter((s) => s.category === key));
     list.appendChild(b);
   });
   show("home");
 }
 
-function startGame(pool) {
-  state.queue = shuffle(pool).slice(0, GAME_LENGTH);
+function startGame(pool, mode = "random") {
+  state.mode = mode;
+  state.queue = mode === "real" ? [...pool] : shuffle(pool).slice(0, GAME_LENGTH);
   state.index = 0;
   state.score = 0;
   state.results = [];
@@ -61,44 +83,54 @@ function spotText(yardLine) {
   return yardLine < 50 ? `OWN ${yardLine}` : `OPP ${100 - yardLine}`;
 }
 
+const teamLabel = (sit, who) => (sit.teams ? sit.teams[who] : who === "us" ? "YOU" : "OPP");
+
 function renderScoreboard(sit) {
   const team = (who) => {
-    const label = who === "us" ? "YOU" : "OPP";
-    const tos = [0, 1, 2].map((i) => `<span class="${i < sit.timeouts[who] ? "on" : ""}"></span>`).join("");
+    const n = sit.timeouts[who];
+    const tos = n == null
+      ? `<span class="unknown">TO: ?</span>`
+      : [0, 1, 2].map((i) => `<span class="${i < n ? "on" : ""}"></span>`).join("");
     return `<div class="team ${who}">
-      <div class="name">${label}</div>
+      <div class="name">${teamLabel(sit, who)}${sit.teams && who === "us" ? " (you)" : ""}</div>
       <div class="pts">${sit.score[who]}</div>
-      <div class="tos" title="${sit.timeouts[who]} timeouts">${tos}</div>
+      <div class="tos" title="${n == null ? "timeouts not reported" : `${n} timeouts`}">${tos}</div>
       <div class="ball">${sit.possession === who ? "● ball" : ""}</div>
     </div>`;
   };
-  let dd;
-  if (sit.pat) dd = "Try (PAT / 2-pt)";
+  let dd, spot = "";
+  if (sit.coinToss) dd = "Coin toss";
+  else if (sit.pat) dd = "Try (PAT / 2-pt)";
+  else if (sit.down == null) dd = "Down not reported";
   else dd = `${ordinal(sit.down)} & ${sit.goalToGo || sit.yardLine + sit.distance >= 100 ? "Goal" : sit.distance}`;
-  const offense = sit.possession === "us" ? "Your" : "Their";
+  if (!sit.coinToss && !sit.pat) spot = `${teamLabel(sit, sit.possession)} ball, ${spotText(sit.yardLine)}`;
   const qtr = sit.quarter <= 4 ? `Q${sit.quarter}` : "OT";
+  const clock = sit.clock == null ? "—" : `${sit.clockApprox ? "≈" : ""}${sit.clock}`;
+  const clockState = sit.clockRunning === true ? "clock running" : sit.clockRunning === false ? "clock stopped" : "";
   $("scoreboard").innerHTML = `
     ${team("us")}
     <div class="center">
       <div class="qtr">${qtr}</div>
-      <div class="clock ${sit.clockRunning ? "" : "stopped"}">${sit.clock}</div>
-      <div class="qtr">${sit.clockRunning ? "clock running" : "clock stopped"}</div>
+      <div class="clock ${sit.clockRunning ? "" : "stopped"}">${clock}</div>
+      <div class="qtr">${clockState}</div>
       <div class="dd">${dd}</div>
-      <div class="spot">${sit.pat ? "" : `${offense} ball, ${spotText(sit.yardLine)}`}</div>
+      <div class="spot">${spot}</div>
     </div>
     ${team("them")}`;
 }
 
 function renderField(sit) {
+  $("field").classList.toggle("hidden", !!sit.coinToss);
+  if (sit.coinToss) return;
   // 120 units: 10 for each end zone, offense always drives left → right.
   const pct = (yl) => ((10 + yl) / 120) * 100;
   const offColor = sit.possession === "us" ? "var(--us)" : "var(--them)";
   const defColor = sit.possession === "us" ? "var(--them)" : "var(--us)";
-  const ltg = !sit.pat && !sit.goalToGo && sit.yardLine + sit.distance < 100
+  const ltg = !sit.pat && !sit.goalToGo && sit.distance != null && sit.yardLine + sit.distance < 100
     ? `<div class="marker ltg" style="left:${pct(sit.yardLine + sit.distance)}%"></div>` : "";
   $("field").innerHTML = `
-    <div class="endzone left" style="background:${offColor}">${sit.possession === "us" ? "YOU" : "OPP"}</div>
-    <div class="endzone right" style="background:${defColor}">${sit.possession === "us" ? "OPP" : "YOU"}</div>
+    <div class="endzone left" style="background:${offColor}">${teamLabel(sit, sit.possession)}</div>
+    <div class="endzone right" style="background:${defColor}">${teamLabel(sit, sit.possession === "us" ? "them" : "us")}</div>
     <div class="marker los" style="left:${pct(sit.yardLine)}%"></div>
     ${ltg}
     <div class="football" style="left:${pct(sit.yardLine)}%"></div>
@@ -107,7 +139,8 @@ function renderField(sit) {
 
 function renderScenario() {
   const sc = state.queue[state.index];
-  $("progress-text").textContent = `Situation ${state.index + 1} of ${state.queue.length}`;
+  const label = state.mode === "real" ? `Real Moment ${state.index + 1} of ${state.queue.length} · ${sc.game}` : `Situation ${state.index + 1} of ${state.queue.length}`;
+  $("progress-text").textContent = label;
   $("score-text").textContent = `Score: ${state.score}`;
   renderScoreboard(sc.situation);
   renderField(sc.situation);
@@ -115,6 +148,7 @@ function renderScenario() {
   $("sc-title").textContent = sc.title;
   $("sc-prompt").textContent = sc.prompt;
   $("lesson").classList.add("hidden");
+  $("real-card").classList.add("hidden");
   $("next-btn").classList.add("hidden");
 
   const opts = $("options");
@@ -142,6 +176,8 @@ function choose(sc, picked, pickedBtn) {
     b.innerHTML = `<span class="grade ${opt.grade}">${GRADE_LABEL[opt.grade]}</span>${opt.text}<span class="fb">${opt.feedback}</span>`;
   });
 
+  if (sc.real) renderRealCard(sc, picked);
+
   const lesson = $("lesson");
   lesson.innerHTML = `<b>Coaching point:</b> ${sc.lesson}`;
   lesson.classList.remove("hidden");
@@ -160,6 +196,23 @@ function nextScenario() {
   }
 }
 
+function renderRealCard(sc, picked) {
+  const realOpt = sc.options.find((o) => o.real);
+  const matched = picked === realOpt;
+  const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+  const card = $("real-card");
+  card.innerHTML = `
+    <div class="real-head">📺 What really happened</div>
+    <div class="real-verdict ${matched ? "same" : "diff"}">${matched
+      ? `You made the same call as ${sc.real.coach}.`
+      : `You went a different way than ${sc.real.coach}.`}</div>
+    <p><b>The call:</b> ${sc.real.call}</p>
+    <p><b>Result:</b> ${sc.real.outcome}</p>
+    <p class="quote">${sc.real.quote}</p>
+    <p class="fine">Sources: ${sc.sources.map((u) => `<a href="${u}" target="_blank" rel="noopener">${host(u)}</a>`).join(" · ")}</p>`;
+  card.classList.remove("hidden");
+}
+
 // ---------- Results ----------
 function rating(pct) {
   if (pct >= 90) return "Hall of Fame Head Coach 🏆";
@@ -172,13 +225,19 @@ function rating(pct) {
 function renderResults() {
   const max = state.queue.length * POINTS.best;
   const pct = Math.round((state.score / max) * 100);
-  saveBest(pct);
+  if (state.mode !== "real") saveBest(pct);
+  const realResults = state.results.filter((r) => r.sc.real);
+  const same = realResults.filter((r) => r.picked.real).length;
+  $("real-summary").textContent = realResults.length
+    ? `You matched the real coach on ${same} of ${realResults.length} calls.`
+    : "";
   $("rating").textContent = rating(pct);
   $("final-score").textContent = `${state.score} / ${max} points (${pct}%)`;
   const marks = { best: "✅", ok: "🟡", bad: "❌" };
   $("review").innerHTML = state.results.map(({ sc, picked }) => {
     const best = sc.options.find((o) => o.grade === "best");
-    const extra = picked.grade === "best" ? "" : `<div class="fine">Best call: ${best.text}</div>`;
+    let extra = picked.grade === "best" ? "" : `<div class="fine">Best call: ${best.text}</div>`;
+    if (sc.real) extra += `<div class="fine">${sc.real.coach}'s call: ${sc.options.find((o) => o.real).text}</div>`;
     return `<div class="review-item"><span class="mark">${marks[picked.grade]}</span><b>${sc.title}</b> — you chose: ${picked.text}${extra}</div>`;
   }).join("");
   show("results");
@@ -219,7 +278,11 @@ document.querySelectorAll("[data-nav]").forEach((b) => {
     else show(v);
   });
 });
-$("start-all").onclick = () => startGame(SCENARIOS);
+$("start-all").onclick = () => startGame(leaguePool());
+$("start-real").onclick = () => startGame(realPool(), "real");
+document.querySelectorAll("[data-league]").forEach((b) => {
+  b.addEventListener("click", () => { state.league = b.dataset.league; renderHome(); });
+});
 $("next-btn").onclick = nextScenario;
 $("play-again").onclick = renderHome;
 ["lab-clock", "lab-down", "lab-to", "lab-running", "lab-warning"].forEach((id) => {
