@@ -46,7 +46,12 @@
       <div class="card feature sim-card" id="sim-menu-card">
         <span class="tag">New · Simulation</span>
         <h2>Drive Simulator</h2>
-        <p>Play out a late-game situation snap by snap. On offense, pick the play and tempo; on defense, pick the coverage and manage your timeouts to get the ball back. Every play is animated, and possession flips until the clock hits 0:00.</p>
+        <p>Play out a late-game situation snap by snap. Every snap is a real play drawn from NFL or college play-by-play, graded with EPA and a live win-probability meter. On offense, pick the play and tempo; on defense, pick the coverage and manage your timeouts. Possession flips until the clock hits 0:00.</p>
+        <div class="team-pickers" id="team-pickers">
+          <label>Your team <select id="team-us"></select></label>
+          <label>Opponent <select id="team-them"></select></label>
+          <p class="fine" id="team-blurb"></p>
+        </div>
         <div class="drive-list" id="sim-list"></div>
       </div>
       <div class="modes">
@@ -54,7 +59,10 @@
           <span class="tag">2026 season</span>
           <h2>Real Moments</h2>
           <p id="real-blurb">Real calls from this season. Make your decision, then see what the coach actually did and how it played out.</p>
-          <button class="primary" id="start-real">▶ Take the headset</button>
+          <div class="btn-row left">
+            <button class="primary" id="start-real">▶ Hand-picked moments</button>
+            <button class="primary alt" id="start-auto">▶ 2026 decision bank</button>
+          </div>
         </div>
         <div class="card mode">
           <span class="tag">Arcade</span>
@@ -121,6 +129,10 @@
       <div class="hud sim-hud">
         <div class="hud-item"><span class="hud-label">Drive</span><span class="hud-value small" id="sim-title"></span></div>
         <div class="hud-item"><span class="hud-label" id="sim-pc-label">Play clock</span><span class="hud-value" id="sim-pc">40</span></div>
+        <div class="wp-meter" id="sim-wp" title="Your win probability, from a model fit to real play-by-play">
+          <span class="hud-label">Win prob</span>
+          <div class="wp-bar"><div class="wp-fill" id="sim-wp-fill"></div><span class="wp-num" id="sim-wp-num">50%</span></div>
+        </div>
         <span class="led on" id="sim-led">Headset on</span>
         <span class="clock-note hidden" id="sim-note" role="status"></span>
       </div>
@@ -200,6 +212,7 @@
     <!-- Cheat sheet -->
     <section id="sheet" class="view hidden">
       <h1>Cheat Sheet</h1>
+      <div class="card" id="numbers-card"></div>
       <div class="card" data-only="cfb">
         <h2>College rules that change decisions</h2>
         <ul>
@@ -258,14 +271,19 @@
           <li><b>Long yardage in your own territory:</b> punt. Aggressive ≠ correct.</li>
         </ul>
       </div>
+      <p class="fine credits">Data: NFL play-by-play, EPA and win probability from <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noopener">nflverse</a> (nflfastR); defensive charting from FTN Data via nflverse; college play-by-play from <a href="https://github.com/sportsdataverse/cfbfastR-data" target="_blank" rel="noopener">cfbfastR / sportsdataverse</a>; team colors from nflverse.</p>
     </section>
   </main>
   <div id="banner" class="banner hidden" aria-hidden="true"></div>
 
+  <script defer src="js/data/nfl.js"></script>
+  <script defer src="js/data/cfb.js"></script>
+  <script defer src="js/data/moments.js"></script>
   <script defer src="js/scenarios.js"></script>
   <script defer src="js/real-moments.js"></script>
   <script defer src="js/clocklab.js"></script>
   <script defer src="js/app.js"></script>
+  <script defer src="js/model.js"></script>
   <script defer src="js/animate.js"></script>
   <script defer src="js/sim.js"></script>
 </body>

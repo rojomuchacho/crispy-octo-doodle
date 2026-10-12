@@ -176,7 +176,7 @@ const SCENARIOS = [
     prompt: "4th & goal at the 1, first quarter.",
     options: [
       { text: "Go for it", grade: "best",
-        feedback: "Teams convert roughly 55–60% from the 1. That's worth ~4 points on average, plus if you fail they're pinned at their own 1." },
+        feedback: "NFL teams converted 59% of 4th & goal from the 1 in 2023–25. That's worth ~4 points on average, plus if you fail they're pinned at their own 1." },
       { text: "Kick the field goal", grade: "ok",
         feedback: "3 near-certain points, but you're leaving expected points on the table. Most win-probability models favor going clearly." },
       { text: "Run a fake field goal", grade: "bad",
@@ -192,9 +192,9 @@ const SCENARIOS = [
     prompt: "4th & 1 at their 45. Tied in the 2nd quarter.",
     options: [
       { text: "Go for it", grade: "best",
-        feedback: "4th & 1 converts ~70% of the time. A punt from here nets maybe 35 yards. Going is clearly better." },
+        feedback: "4th & 1 converted 69% of the time in 2023–25 NFL play-by-play. A punt from here nets maybe 35 yards. Going is clearly better." },
       { text: "Punt and pin them deep", grade: "bad",
-        feedback: "The classic conservative mistake. You're trading a 70% chance to keep a drive alive for ~35 yards of field position." },
+        feedback: "The classic conservative mistake. You're trading a 69% chance to keep a drive alive for ~35 yards of field position." },
       { text: "Attempt a 63-yard field goal", grade: "bad",
         feedback: "Low make rate, and a miss gives them the ball at their own 45." },
     ],
@@ -208,7 +208,7 @@ const SCENARIOS = [
     prompt: "4th & 9 at your own 26. You lead by 7.",
     options: [
       { text: "Punt", grade: "best",
-        feedback: "4th & 9 converts ~35% of the time, and failure hands them the ball in field-goal range. Punt." },
+        feedback: "4th & 9 converted only 24% of the time in 2023–25, and failure hands them the ball in field-goal range. Punt." },
       { text: "Go for it — be aggressive", grade: "bad",
         feedback: "Aggressive isn't the same as correct. Long distance + bad field position = punt." },
       { text: "Fake punt", grade: "bad",
@@ -224,7 +224,7 @@ const SCENARIOS = [
     prompt: "4th & 3 at their 33. It would be a 51-yard field goal.",
     options: [
       { text: "Go for it", grade: "best",
-        feedback: "4th & 3 converts about half the time, and a first down keeps a touchdown in play. Most models lean go here." },
+        feedback: "4th & 3 converted 55% of the time in 2023–25, and a first down keeps a touchdown in play. Most models lean go here." },
       { text: "Kick the 51-yard field goal", grade: "ok",
         feedback: "Defensible with an elite kicker, but a miss gives them the ball near midfield." },
       { text: "Punt", grade: "bad",
@@ -270,7 +270,7 @@ const SCENARIOS = [
     prompt: "You were down 14 and just scored a TD. Now down 8. Kick or go for two?",
     options: [
       { text: "Go for two now", grade: "best",
-        feedback: "Make it (~48%) and your next TD + XP wins in regulation. Miss it and you know early that you'll need two later — still a path to OT. Overall this beats kicking by several percentage points of win probability." },
+        feedback: "Make it (47% league-wide in 2023–25) and your next TD + XP wins in regulation. Miss it and you know early that you'll need two later — still a path to OT. Overall this beats kicking by several percentage points of win probability." },
       { text: "Kick the extra point (down 7)", grade: "ok",
         feedback: "The traditional call. But it guarantees your best case is overtime (a coin flip) after your next TD." },
     ],

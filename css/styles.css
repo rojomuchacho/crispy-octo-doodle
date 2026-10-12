@@ -616,3 +616,35 @@ kbd { font-family: var(--pixel); font-size: 0.55rem; background: #000; border: 2
 .snap-hint:empty { display: none; }
 .call.def { border-color: var(--pink); }
 .call.def span { color: var(--pink); }
+
+/* ================= Real data: WP meter, EPA, teams ================= */
+.wp-meter { display: flex; flex-direction: column; gap: 6px; min-width: 160px; flex: 1; max-width: 280px; }
+.wp-bar { position: relative; height: 18px; background: #2a1a10; box-shadow: 0 0 0 3px #000; }
+.wp-fill { position: absolute; inset: 0 auto 0 0; width: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); transition: width 0.6s steps(6); }
+.wp-meter.low .wp-fill { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
+.wp-meter.high .wp-fill { background: var(--best); box-shadow: 0 0 10px var(--best); }
+.wp-num { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-family: var(--pixel); font-size: 0.5rem; color: #fff; text-shadow: 2px 2px 0 #000; }
+.log-real { display: block; font-size: 0.95rem; color: var(--muted); margin-top: 2px; }
+.log-real::before { content: "▸ "; color: var(--pink); }
+.log-meta { display: block; font-size: 0.95rem; color: var(--text); margin-top: 2px; }
+.pos { color: var(--best); }
+.neg { color: var(--bad); }
+b.pos, b.neg { font-weight: normal; }
+.stat-value small { font-size: 0.45rem; color: var(--muted); }
+.wp-chart { width: 100%; max-width: 520px; height: auto; display: block; margin: 6px 0 4px; background: #000; box-shadow: 0 0 0 3px var(--panel-2); }
+.wp-chart .mid { stroke: var(--muted); stroke-dasharray: 4 4; stroke-width: 1; }
+.wp-chart .line { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; }
+.wp-chart .dot { fill: var(--pink); }
+.swings { list-style: none; padding: 0; margin: 6px 0 0; }
+.swings li { padding: 4px 0; }
+.team-pickers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px 16px; margin: 12px 0 4px; }
+.team-pickers label { display: flex; flex-direction: column; gap: 6px; font-family: var(--pixel); font-size: 0.5rem; color: var(--muted); text-transform: uppercase; }
+.team-pickers select { font: inherit; font-family: var(--body); font-size: 1.1rem; text-transform: none; background: #000; color: var(--accent); border: 3px solid var(--cyan); padding: 6px 8px; }
+.team-pickers .fine { grid-column: 1 / -1; margin: 0; }
+.player i { color: var(--ink, #000); }
+.endzone span { color: inherit; opacity: 0.8; }
+#sim .team.us .name { color: var(--us-text, var(--us)); }
+#sim .team.them .name { color: var(--them-text, var(--them)); }
+.btn-row.left { justify-content: flex-start; padding-bottom: 0; }
+.numbers-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px 20px; }
+.credits a { color: var(--cyan); }

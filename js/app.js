@@ -39,6 +39,43 @@ function saveBest(score) { if (score > loadBest()) savePref(bestKey(), String(sc
 
 const leaguePool = () => SCENARIOS.filter((s) => !s.leagues || s.leagues.includes(state.league));
 const realPool = () => REAL_MOMENTS.filter((m) => m.league === state.league);
+const autoPool = () => AUTO_MOMENTS.filter((m) => m.league === state.league).map(autoToScenario);
+const DATA_SOURCE = {
+  nfl: "https://github.com/nflverse/nflverse-data",
+  cfb: "https://github.com/sportsdataverse/cfbfastR-data",
+};
+const stripClock = (c) => String(c).replace(/^0(\d:)/, "$1");
+
+// Exact 2026 details for the curated Real Moments, pulled from play-by-play by scripts/build_data.py.
+REAL_MOMENTS.forEach((m) => {
+  const f = typeof MOMENT_FACTS !== "undefined" && MOMENT_FACTS[m.id];
+  if (!f) return;
+  m.fact = f;
+  if (m.league === "nfl") {
+    Object.assign(m.situation, { clock: stripClock(f.clock), clockApprox: false, timeouts: { ...f.timeouts } });
+    if (m.situation.down == null && f.down) Object.assign(m.situation, { down: f.down, distance: f.distance });
+  }
+  if (!m.sources.includes(DATA_SOURCE[m.league])) m.sources.push(DATA_SOURCE[m.league]);
+});
+
+// Auto-generated 2026 decisions, graded by the win-probability model.
+function autoToScenario(m) {
+  const best = m.options.reduce((a, b) => (b.wp > a.wp ? b : a));
+  const realOpt = m.options.find((o) => o.real);
+  const team = m.league === "nfl" ? (NFL_DATA.teams[m.situation.teams.us] || {}).name || m.situation.teams.us : m.prompt.replace(/^You're (.*?)\..*$/, "$1");
+  return {
+    id: m.id, league: m.league, category: m.category, title: m.title, game: m.game, prompt: m.prompt,
+    situation: { ...m.situation, clock: stripClock(m.situation.clock) },
+    options: m.options.map((o) => ({
+      text: o.text, grade: o.grade, real: o.real,
+      feedback: `Model win probability: ${pct(o.wp)}${o === best ? ", the best of the options." : ` (${signed((o.wp - best.wp) * 100, 1)} pts vs. ${best.text.toLowerCase()}).`}`,
+    })),
+    real: { coach: `the ${team} sideline`, call: realOpt.text, outcome: m.realResult, quote: `Win probability before the snap: ${pct(m.wpBefore)}.` },
+    lesson: `${m.convNote} The model, fit to real play-by-play, favors: ${best.text.toLowerCase()}.`,
+    sources: [DATA_SOURCE[m.league]],
+    auto: true,
+  };
+}
 
 function show(view) {
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
@@ -198,7 +235,7 @@ function renderHome() {
   $("clock-toggle").checked = state.clockOn;
   const best = loadBest();
   $("best-score").textContent = best ? `HI-SCORE (${LEAGUE_NAME[state.league]}): ${best.toLocaleString()}` : "";
-  $("real-blurb").textContent = `${realPool().length} real ${LEAGUE_NAME[state.league]} calls from the 2026 season. Make your decision, then see what the coach actually did and how it played out.`;
+  $("real-blurb").textContent = `${realPool().length} hand-picked ${LEAGUE_NAME[state.league]} calls from the 2026 season, plus a bank of ${AUTO_MOMENTS.filter((m) => m.league === state.league).length} high-stakes 4th downs pulled from 2026 play-by-play. Make your decision, then see what the coach did, how it played out, and what the win-probability model says.`;
   const list = $("category-list");
   list.innerHTML = "";
   const pool = leaguePool();
@@ -462,22 +499,25 @@ function renderField(sit, target = $("field")) {
     }
   }
   // End zones, when the camera can see them.
-  const endzone = (from, to, color, label, side) => {
+  const endzone = (from, to, color, label, side, ink) => {
     const a = Math.max(fieldPct(from), 0), b = Math.min(fieldPct(to), 100);
     if (b <= 0 || a >= 100) return "";
-    return `<div class="endzone ${side}" style="left:${a}%;width:${b - a}%;background:${color}"><span>${label}</span></div>`;
+    return `<div class="endzone ${side}" style="left:${a}%;width:${b - a}%;background:${color};color:${ink}"><span>${label}</span></div>`;
   };
-  parts.push(endzone(-10, 0, offColor, teamLabel(sit, sit.possession), "left"));
-  parts.push(endzone(100, 110, defColor, teamLabel(sit, sit.possession === "us" ? "them" : "us"), "right"));
+  const inkFor = (who) => (who === "us" ? "var(--us-ink, #000)" : "var(--them-ink, #000)");
+  parts.push(endzone(-10, 0, offColor, teamLabel(sit, sit.possession), "left", inkFor(sit.possession)));
+  parts.push(endzone(100, 110, defColor, teamLabel(sit, sit.possession === "us" ? "them" : "us"), "right", inkFor(sit.possession === "us" ? "them" : "us")));
   if (view.start + view.span >= 109) parts.push(`<div class="goalpost" style="left:${fieldPct(110) - 1}%"></div>`);
 
   parts.push(`<div class="marker los" style="left:${fieldPct(los)}%"></div>`);
   if (!sit.pat && !sit.goalToGo && sit.distance != null && los + sit.distance < 100) {
     parts.push(`<div class="marker ltg" style="left:${fieldPct(los + sit.distance)}%"><span class="chain">${sit.distance}</span></div>`);
   }
+  const offInk = sit.possession === "us" ? "var(--us-ink, #000)" : "var(--them-ink, #000)";
+  const defInk = sit.possession === "us" ? "var(--them-ink, #000)" : "var(--us-ink, #000)";
   const place = (list, color, side) => list.map(([dx, top, pos], i) => {
     const y = Math.min(109, Math.max(-9, los + dx));
-    return `<span class="player ${side}" data-i="${i}" style="left:${fieldPct(y)}%;top:${top}%;--team:${color}"><i>${pos}</i></span>`;
+    return `<span class="player ${side}" data-i="${i}" style="left:${fieldPct(y)}%;top:${top}%;--team:${color};--ink:${side === "off" ? offInk : defInk}"><i>${pos}</i></span>`;
   }).join("");
   parts.push(place(OFFENSE, offColor, "off"), place(DEFENSE, defColor, "def"));
   parts.push(`<div class="football" id="football" style="left:${fieldPct(los)}%"></div>`);
@@ -608,6 +648,25 @@ function showBanner(text, grade, gained) {
   showBanner.t = setTimeout(() => banner.classList.add("hidden"), 1300);
 }
 
+function numbersBlock(sc) {
+  const f = sc.fact;
+  if (!f) return "";
+  const parts = [];
+  if (f.wp != null && sc.league === "nfl") parts.push(`Win probability before the snap: ${pct(f.wp)}`);
+  if (f.epa != null && sc.league === "nfl") parts.push(`real play: EPA ${signed(f.epa)}, win probability ${signed(f.wpa * 100, 1)} pts`);
+  const label = { go: "Go", punt: "Punt", fg: "Field goal" };
+  const st = sc.situation;
+  let model = "";
+  if (st.down === 4) {
+    const [m, sec] = String(st.clock).split(":").map(Number);
+    const secs = m * 60 + sec + (4 - st.quarter) * 900;
+    const { values, conv } = fourthDownValues({ diff: st.score.us - st.score.them, secs, dist: st.distance, yl100: 100 - st.yardLine,
+      posTO: st.timeouts.us ?? 2, defTO: st.timeouts.them ?? 2 }, sc.league);
+    model = `<p><b>Model:</b> ${Object.entries(values).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${label[k]} ${pct(v)}`).join(" · ")} win probability. 4th & ${st.distance} converts ${Math.round(conv * 100)}% in real ${sc.league === "nfl" ? "NFL" : "college"} play-by-play.</p>`;
+  }
+  return `<p><b>By the numbers:</b> ${parts.join("; ") || "from 2026 play-by-play"}.</p>${model}`;
+}
+
 function renderRealCard(sc, picked) {
   const realOpt = sc.options.find((o) => o.real);
   const matched = picked === realOpt;
@@ -621,6 +680,7 @@ function renderRealCard(sc, picked) {
     <p><b>The call:</b> ${sc.real.call}</p>
     <p><b>Result:</b> ${sc.real.outcome}</p>
     <p class="quote">${sc.real.quote}</p>
+    ${numbersBlock(sc)}
     <p class="fine">Sources: ${sc.sources.map((u) => `<a href="${u}" target="_blank" rel="noopener">${host(u)}</a>`).join(" · ")}</p>`;
   card.classList.remove("hidden");
 }
@@ -684,6 +744,34 @@ function renderResults() {
   show("results");
 }
 
+// ---------- Cheat sheet: real numbers from play-by-play ----------
+function renderNumbers() {
+  const L = leagueData();
+  const k = L.kick;
+  const nfl = state.league === "nfl";
+  const conv = [1, 2, 3, 4, 5, 6, 8, 10].filter((d) => k.conv4[d] != null)
+    .map((d) => `<tr><td>4th & ${d}</td><td>${Math.round(k.conv4[d] * 100)}%</td></tr>`).join("");
+  const fg = [30, 40, 45, 50, 55, 60].map((d) => `<tr><td>${d} yards</td><td>${Math.round(fgProb(d) * 100)}%</td></tr>`).join("");
+  const epRow = (yl) => expectedPoints(1, 10, yl).toFixed(1);
+  const sacks = L.sackRate;
+  $("numbers-card").innerHTML = `
+    <h2>By the numbers · ${nfl ? "NFL 2023–25" : "College 2024–25"}</h2>
+    <p class="fine">Straight from ${nfl ? "nflverse" : "cfbfastR"} play-by-play (${L.meta.plays.toLocaleString()} plays).</p>
+    <div class="numbers-grid">
+      <table class="chart"><thead><tr><th>4th-down tries</th><th>Converted</th></tr></thead><tbody>${conv}</tbody></table>
+      <table class="chart"><thead><tr><th>Field goal</th><th>Made</th></tr></thead><tbody>${fg}</tbody></table>
+      <table class="chart"><thead><tr><th>1st & 10 at…</th><th>Expected points</th></tr></thead><tbody>
+        <tr><td>Own 10</td><td>${epRow(90)}</td></tr><tr><td>Own 25</td><td>${epRow(75)}</td></tr><tr><td>Midfield</td><td>${epRow(50)}</td></tr>
+        <tr><td>Opp 30</td><td>${epRow(30)}</td></tr><tr><td>Opp 10</td><td>${epRow(10)}</td></tr></tbody></table>
+      <table class="chart"><thead><tr><th>Other</th><th></th></tr></thead><tbody>
+        <tr><td>Extra point</td><td>${Math.round(k.xp * 100)}%</td></tr>
+        ${k.two ? `<tr><td>Two-point try</td><td>${Math.round(k.two * 100)}%</td></tr>` : ""}
+        <tr><td>Sack rate per dropback</td><td>${(sacks.all * 100).toFixed(1)}%</td></tr>
+        ${sacks.blitz ? `<tr><td>…vs. a blitz (5+ rushers)</td><td>${(sacks.blitz * 100).toFixed(1)}%</td></tr>` : ""}
+        <tr><td>Average net punt</td><td>${Math.round(avgPuntNet())} yards</td></tr></tbody></table>
+    </div>`;
+}
+
 // ---------- Clock Lab ----------
 function parseClock(str) {
   const m = String(str).trim().match(/^(\d{1,2}):(\d{2})$|^(\d+)$/);
@@ -718,11 +806,13 @@ document.querySelectorAll("[data-nav]").forEach((b) => {
     const v = b.dataset.nav;
     if (v === "home") renderHome();
     else if (v === "lab") { renderLab(); show("lab"); }
+    else if (v === "sheet") { renderNumbers(); show("sheet"); }
     else show(v);
   });
 });
 $("start-all").onclick = () => startGame(leaguePool());
 $("start-real").onclick = () => startGame(realPool(), "real");
+$("start-auto").onclick = () => startGame(shuffle(autoPool()).slice(0, GAME_LENGTH), "real");
 $("next-btn").onclick = nextScenario;
 $("timeout-btn").onclick = callTimeout;
 $("audible-btn").onclick = qbAudible;

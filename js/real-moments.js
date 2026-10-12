@@ -10,14 +10,14 @@ const REAL_MOMENTS = [
     league: "nfl",
     category: "fourth",
     title: "Ben Johnson's Early Gamble",
-    game: "Bears vs. Panthers · Week 1 · Sept. 13, 2026",
+    game: "Bears at Panthers · Week 1 · Sept. 13, 2026",
     situation: { quarter: 2, clock: null, score: { us: 21, them: 14 }, teams: { us: "CHI", them: "CAR" }, possession: "us", down: 4, distance: 1, yardLine: 21, timeouts: { us: null, them: null } },
     prompt: "You're Chicago. Up 7 in the 2nd quarter, 4th & 1 at your own 21.",
     options: [
       { text: "Go for it", grade: "best", real: true,
-        feedback: "Models generally see 4th & 1 in your own 20s as close but leaning go: 4th & 1 converts roughly 70% of the time, and an explosive offense tilts it further. The cost of failure is real, though — the opponent starts in scoring range." },
+        feedback: "Models generally see 4th & 1 in your own 20s as close but leaning go: 4th & 1 converted 69% of the time in 2023–25, and an explosive offense tilts it further. The cost of failure is real, though — the opponent starts in scoring range." },
       { text: "Punt", grade: "ok",
-        feedback: "The traditional call, and not a bad one this deep in your own territory. You give up a ~70% chance to keep the drive alive for ~40 yards of field position." },
+        feedback: "The traditional call, and not a bad one this deep in your own territory. You give up a 69% chance to keep the drive alive for ~40 yards of field position." },
     ],
     real: {
       coach: "Ben Johnson",
@@ -206,10 +206,10 @@ const REAL_MOMENTS = [
     situation: { quarter: 4, clock: "6:50", clockApprox: true, score: { us: 31, them: 36 }, teams: { us: "ORE", them: "OKST" }, possession: "us", down: 4, distance: 8, yardLine: 33, timeouts: { us: null, them: null } },
     prompt: "You're Oregon, down 5 with about 7 minutes left. 4th & 8 at your own 33.",
     options: [
-      { text: "Punt and trust your defense", grade: "best",
-        feedback: "There's enough time for at least one more possession. 4th & 8 converts only about a third of the time, and failing hands them a short field." },
-      { text: "Go for it", grade: "bad", real: true,
-        feedback: "Long yardage in your own territory: a ~1-in-3 shot, with a likely field goal against you when it fails — turning a 5-point game into an 8-point game." },
+      { text: "Punt and trust your defense", grade: "ok",
+        feedback: "The traditional call: there's time for another possession, and failing hands them a short field. The win-probability model has it slightly behind going for it." },
+      { text: "Go for it", grade: "best", real: true,
+        feedback: "Closer than it looks. College 4th & 8 converted 41% of the time in 2024–25, so the model narrowly favors going (about 20% vs 19% win probability). Lanning still called it the wrong decision afterward." },
     ],
     real: {
       coach: "Dan Lanning",
@@ -217,7 +217,7 @@ const REAL_MOMENTS = [
       outcome: "The attempt failed. Oklahoma State kicked a field goal and won 39-31. Oregon went 0-for-3 on fourth down that day.",
       quote: "\"Wrong decision on my part.\" — Dan Lanning",
     },
-    lesson: "Aggressive coaches still punt on 4th & long in their own territory when there's time left. Distance matters as much as field position.",
+    lesson: "Down 5 with under 7 minutes, the two choices are nearly even. When the numbers are this close, a coach's read of his own defense is a fair tiebreaker, and judging the call by the result misses that.",
     sources: [
       "https://www.si.com/college-football/week-2-winners-losers-oregon-dan-lanning-leads-saturday-overthinking",
       "https://bleacherreport.com/articles/25498648-everything-dan-lanning-said-about-no-6-oregons-historic-upset-loss-oklahoma-state",
@@ -235,7 +235,7 @@ const REAL_MOMENTS = [
       { text: "Go for it", grade: "best",
         feedback: "Convert and the game is over: with Kentucky out of timeouts you can kneel out 1:46 (the clock stops briefly for a first down in the final two minutes, but each kneel still burns ~42 seconds). Fail, and they need ~25 yards for a tying field goal." },
       { text: "Punt and pin them deep", grade: "ok", real: true,
-        feedback: "Kentucky would need ~50 yards with no timeouts just to try a tying kick. Reasonable — but you pass up a ~70% chance to end the game outright." },
+        feedback: "Kentucky would need ~50 yards with no timeouts just to try a tying kick. Reasonable — but you pass up a 71% chance (college 4th & 1, 2024–25) to end the game outright." },
     ],
     real: {
       coach: "Lane Kiffin",

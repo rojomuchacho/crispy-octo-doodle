@@ -38,66 +38,98 @@ const irnd = (a, b) => Math.round(rnd(a, b));
 const chance = (p) => Math.random() < Math.max(0.01, Math.min(0.97, p));
 const other = (team) => (team === "us" ? "them" : "us");
 
-// ---------- Defensive calls change the odds ----------
-const MOD_BASE = { runY: 1, comp: 0, passY: 1, sack: 0, int: 0, oob: 1, deepComp: 0, shortComp: 0, outComp: 0 };
+// ---------- Defensive calls ----------
+// In NFL mode each call draws from real plays run against that look (FTN charting via
+// nflverse, 2023-25): blitz = 5+ pass rushers, Cover 2 = Cover 2 / 2-man, stacked box = 8+
+// in the box, prevent = zone with 4 or fewer rushers in the final 2:00 while leading by 4-16.
+// College data has no charting, so college applies the NFL effect sizes as a tilt.
 const DEF_CALLS = {
-  base: { label: "Base defense", hint: "Balanced against run and pass", mod: {} },
-  box: { label: "Stack the box", hint: "Stuffs the run, weak against the pass", mod: { runY: 0.55, comp: 0.06, passY: 1.2 } },
-  blitz: { label: "Blitz", hint: "More sacks, but big plays if they beat it", mod: { sack: 0.12, comp: -0.08, passY: 1.35, int: 0.01, runY: 1.1 } },
-  cover2: { label: "Cover 2", hint: "Takes away the sideline and deep ball", mod: { outComp: -0.22, oob: 0.5, deepComp: -0.1, runY: 1.15 } },
-  prevent: { label: "Prevent", hint: "No deep balls; allows short catches in bounds", mod: { deepComp: -0.25, shortComp: 0.12, passY: 1.15, oob: 0.4, runY: 1.25, sack: -0.03 } },
+  base: { label: "Base defense", hint: "Balanced: every real play of this type" },
+  box: { label: "Stack the box", hint: "8+ in the box: tougher runs" },
+  blitz: { label: "Blitz", hint: "5+ rushers: more sacks, more big plays" },
+  cover2: { label: "Cover 2", hint: "Two deep safeties, squeezes the sideline" },
+  prevent: { label: "Prevent", hint: "Soft zone: concede short, take away deep" },
   letScore: { label: "Let them score", hint: "Get the ball back with time on the clock", when: (s) => s.yardLine >= 88 },
 };
-const modFor = (call) => ({ ...MOD_BASE, ...((DEF_CALLS[call] || DEF_CALLS.base).mod || {}) });
 
-// ---------- Offensive plays ----------
-// Each play returns what happened; the engine applies clock and down rules.
+// ---------- Real plays ----------
+const PASS_CATS = ["quickOut", "slant", "deep", "hail"];
+const INT_DEPTH = { quickOut: 6, slant: 9, deep: 25, hail: 40 };
+const VERB = { runIn: "Run up the middle", runOut: "Run to the outside", quickOut: "Quick out", slant: "Slant", deep: "Deep shot", hail: "Hail Mary" };
+
+// Team strength tilts which real plays get drawn: weight = exp(beta * EPA), where beta is
+// the offense's EPA/play edge over average plus the defense's EPA/play allowed over average.
+function teamBeta(kind) {
+  const s = sim.s;
+  if (s.league !== "nfl" || !sim.teams) return 0;
+  const T = NFL_DATA.teams, o = T[sim.teams[s.poss]], d = T[sim.teams[other(s.poss)]];
+  if (!o || !d) return 0;
+  const delta = kind === "pass" ? o.offPass + d.defPass : o.offRun + d.defRun;
+  return delta / NFL_DATA.epaVar;
+}
+function weightedPick(list, beta) {
+  if (!beta) return list[Math.floor(Math.random() * list.length)];
+  const w = list.map((p) => Math.exp(beta * Math.max(-3, Math.min(3, p[2] || 0))));
+  let x = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < list.length; i++) { x -= w[i]; if (x <= 0) return list[i]; }
+  return list[list.length - 1];
+}
+
+function realPlay(cat, defCall) {
+  const s = sim.s;
+  const L = leagueData(s.league);
+  const isPass = PASS_CATS.includes(cat);
+  const call = defCall && defCall !== "base" ? defCall : null;
+  if (isPass && cat !== "hail") {
+    let rate = (call && L.sackRate[call]) || L.sackRate.all;
+    if (s.league === "cfb" && call && NFL_DATA.sackRate[call]) rate = L.sackRate.all * NFL_DATA.sackRate[call] / NFL_DATA.sackRate.all;
+    if (Math.random() < rate) return toResult(weightedPick(L.sacks, 0), "sack");
+  }
+  const bank = L.bank[cat] || L.bank.deep;
+  let list = (s.league === "nfl" && call && bank[call]) || bank.all;
+  let beta = teamBeta(isPass ? "pass" : "run");
+  if (s.league === "cfb" && call) {
+    const r = NFL_DATA.rates[cat];
+    if (r && r[call]) beta += (r[call].epa - r.all.epa) / NFL_DATA.epaVar;
+  }
+  return toResult(weightedPick(list, beta), cat);
+}
+
+function toResult([yards, flags, epa, desc], cat) {
+  const s = sim.s;
+  const r = { yards, inc: !!(flags & 1), int: !!(flags & 2), fumble: !!(flags & 4), oob: !!(flags & 8), realDesc: desc, realEpa: epa };
+  const toGo = 100 - s.yardLine;
+  if (cat === "sack") {
+    r.sack = true;
+    r.yards = Math.min(-1, yards);
+    r.secs = 4;
+    r.text = r.fumble ? "SACKED and the ball comes loose! Defense recovers." : `SACKED for a loss of ${-r.yards}.`;
+    return r;
+  }
+  r.secs = r.inc ? (cat === "deep" || cat === "hail" ? 6 : 4) : cat === "deep" || cat === "hail" ? 7 : 6;
+  if (r.int) {
+    r.yards = Math.min(toGo - 1, INT_DEPTH[cat] || 8);
+    r.text = `${VERB[cat]} — INTERCEPTED!`;
+    return r;
+  }
+  if (r.inc) { r.yards = 0; r.text = `${VERB[cat]}, incomplete.`; return r; }
+  r.yards = Math.min(toGo, yards);
+  const gain = r.yards >= toGo ? "TOUCHDOWN" : `${r.yards >= 0 ? "a gain of" : "a loss of"} ${Math.abs(r.yards)}`;
+  r.text = `${VERB[cat]}${PASS_CATS.includes(cat) ? " complete" : ""} for ${gain}${r.oob && r.yards < toGo ? ", out of bounds" : ""}${r.fumble ? " — FUMBLE, defense recovers!" : "."}`;
+  return r;
+}
+
 const PLAYS = {
-  runIn: { label: "Run inside", hint: "Safe, keeps the clock running",
-    run: (s, m) => {
-      if (chance(0.01)) return { fumble: true, yards: irnd(0, 3), secs: 5, text: "Run up the middle — FUMBLE! Recovered by the defense." };
-      const raw = chance(0.05) ? irnd(12, 30) : rnd(-1, 7) + rnd(-1, 2);
-      const y = Math.max(-3, Math.round(raw * (raw > 0 ? m.runY : 1)));
-      return { yards: y, secs: irnd(4, 6), text: `Run up the middle for ${y} yard${Math.abs(y) === 1 ? "" : "s"}.` };
-    } },
-  runOut: { label: "Run outside", hint: "Can get out of bounds",
-    run: (s, m) => {
-      if (chance(0.012)) return { fumble: true, yards: irnd(0, 4), secs: 5, text: "Toss to the edge — FUMBLE! Recovered by the defense." };
-      const raw = chance(0.07) ? irnd(15, 40) : rnd(-3, 9);
-      const y = Math.round(raw * (raw > 0 ? m.runY : 1));
-      const oob = chance(0.4 * m.oob);
-      return { yards: y, oob, secs: irnd(5, 7), text: `Run outside for ${y} yard${Math.abs(y) === 1 ? "" : "s"}${oob ? ", out of bounds" : ""}.` };
-    } },
-  quickOut: { label: "Quick out", hint: "Sideline throw, often stops the clock",
-    run: (s, m) => {
-      if (chance(0.04 + m.sack)) return sack();
-      if (chance(0.015 + m.int)) return { int: true, yards: irnd(3, 8), secs: 5, text: "Quick out — INTERCEPTED by the corner!" };
-      if (!chance(0.68 + m.comp + m.shortComp + m.outComp)) return { inc: true, yards: 0, secs: 4, text: "Quick out, incomplete." };
-      const y = Math.round(irnd(3, 11) * m.passY), oob = chance(0.65 * m.oob);
-      return { yards: y, oob, secs: 5, text: `Quick out complete for ${y}${oob ? ", out of bounds" : ", tackled in bounds"}.` };
-    } },
-  slant: { label: "Slant / middle", hint: "Higher percentage, stays in bounds",
-    run: (s, m) => {
-      if (chance(0.05 + m.sack)) return sack();
-      if (chance(0.02 + m.int)) return { int: true, yards: irnd(5, 10), secs: 5, text: "Slant — tipped and INTERCEPTED!" };
-      if (!chance(0.7 + m.comp + m.shortComp)) return { inc: true, yards: 0, secs: 4, text: "Slant, incomplete." };
-      const y = Math.round((chance(0.1) ? irnd(18, 35) : irnd(5, 13)) * m.passY);
-      return { yards: y, secs: irnd(5, 7), text: `Slant complete for ${y}, tackled in bounds.` };
-    } },
-  deep: { label: "Deep shot", hint: "Big gain or nothing",
-    run: (s, m) => {
-      if (chance(0.07 + m.sack)) return sack();
-      if (chance(0.05 + m.int)) return { int: true, yards: irnd(25, 40), secs: 7, text: "Deep shot — INTERCEPTED downfield!" };
-      if (!chance(0.36 + m.comp + m.deepComp)) return { inc: true, yards: 0, secs: 6, text: "Deep shot, overthrown. Incomplete." };
-      const y = Math.min(100 - s.yardLine, irnd(22, 45)), oob = chance(0.25 * m.oob);
-      return { yards: y, oob, secs: 7, text: `Deep shot COMPLETE for ${y}${oob ? ", out of bounds" : ""}!` };
-    } },
-  hail: { label: "Hail Mary", hint: "Last-second heave", when: (s) => s.yardLine >= 45,
-    run: (s, m) => {
-      const toGo = 100 - s.yardLine;
-      if (chance(0.06 + m.int)) return { int: true, yards: toGo - 5, secs: 8, text: "Hail Mary — picked off in the end zone." };
-      if (chance((toGo <= 45 ? 0.1 : 0.05) + m.deepComp * 0.2)) return { yards: toGo, secs: 8, text: "HAIL MARY... CAUGHT! TOUCHDOWN!" };
-      return { inc: true, yards: 0, secs: 8, text: "Hail Mary batted down. Incomplete." };
+  runIn: { label: "Run inside", hint: "Real inside runs: steady, keeps the clock running", run: (s, d) => realPlay("runIn", d) },
+  runOut: { label: "Run outside", hint: "Real runs to the edge: can get out of bounds", run: (s, d) => realPlay("runOut", d) },
+  quickOut: { label: "Quick out", hint: "Short sideline throws (air yards ≤ 9)", run: (s, d) => realPlay("quickOut", d) },
+  slant: { label: "Slant / middle", hint: "Throws over the middle (air yards ≤ 14)", run: (s, d) => realPlay("slant", d) },
+  deep: { label: "Deep shot", hint: "Throws 20+ yards downfield", run: (s, d) => realPlay("deep", d) },
+  hail: { label: "Hail Mary", hint: "Real 40+ yard heaves at the end of a half", when: (s) => s.yardLine >= 45,
+    run: (s, d) => {
+      const r = realPlay(sim.s.league === "nfl" ? "hail" : "deep", d);
+      if (!r.inc && !r.int && !r.sack) { r.yards = 100 - s.yardLine; r.text = "HAIL MARY... CAUGHT! TOUCHDOWN!"; }
+      return r;
     } },
   spike: { label: "Spike", hint: "Stops the clock, costs a down", when: (s) => s.clockRunning && s.down < 4,
     run: () => ({ inc: true, spike: true, yards: 0, secs: 1, text: "Spiked to stop the clock." }) },
@@ -106,19 +138,15 @@ const PLAYS = {
   fg: { label: "Field goal", hint: "", when: (s) => 100 - s.yardLine + 17 <= 66,
     run: (s) => {
       const dist = Math.round(100 - s.yardLine + 17);
-      const make = dist <= 30 ? 0.98 : dist <= 40 ? 0.92 : dist <= 50 ? 0.78 : dist <= 55 ? 0.62 : dist <= 60 ? 0.42 : 0.15;
-      const good = chance(make);
+      const good = Math.random() < fgProb(dist, s.league);
       return { fg: true, good, dist, secs: 4, text: `${dist}-yard field goal is ${good ? "GOOD!" : "NO GOOD."}` };
     } },
-  punt: { label: "Punt", hint: "Flip the field", when: (s) => s.yardLine < 65,
-    run: () => ({ punt: true, net: irnd(36, 48), secs: 8, text: "Punt away." }) },
+  punt: { label: "Punt", hint: "Real net punt distances", when: (s) => s.yardLine < 65,
+    run: (s) => {
+      const nets = leagueData(s.league).kick.puntNet;
+      return { punt: true, net: nets[Math.floor(Math.random() * nets.length)], secs: 8, text: "Punt away." };
+    } },
 };
-function sack() {
-  const y = -irnd(4, 9);
-  return chance(0.08)
-    ? { fumble: true, sack: true, yards: y, secs: 4, text: "SACKED and the ball comes loose! Defense recovers." }
-    : { yards: y, secs: 4, sack: true, text: `SACKED for a loss of ${-y}.` };
-}
 
 const TEMPO = {
   fast: { label: "Snap fast", desc: "No-huddle: snap with ~32 on the play clock" },
@@ -136,6 +164,67 @@ const fmt = (secs) => `${Math.floor(Math.max(0, Math.round(secs)) / 60)}:${Strin
 const isLate = (s) => s.quarter === 4 || s.quarter === 2;
 const lead = (s, team) => s.score[team] - s.score[other(team)];
 const onOffense = () => sim.s.poss === "us";
+const gameSecs = (s) => (s.quarter === 2 ? s.clock + 1800 : s.clock);
+const epAt = (s, down, dist, yardLine) => expectedPoints(down, dist, 100 - yardLine, s.league);
+
+// Our win probability right now, from the real-data model in model.js.
+function ourWP() {
+  const s = sim.s;
+  const secs = gameSecs(s);
+  if (sim.awaitingTry) return tryValues({ diffAfterTD: lead(s, "us"), secs, posTO: s.timeouts.us, defTO: s.timeouts.them }, s.league).pat;
+  const st = { secs, down: s.down, dist: s.distance, yl100: 100 - s.yardLine };
+  return s.poss === "us"
+    ? winProb({ ...st, diff: lead(s, "us"), posTO: s.timeouts.us, defTO: s.timeouts.them }, s.league)
+    : 1 - winProb({ ...st, diff: lead(s, "them"), posTO: s.timeouts.them, defTO: s.timeouts.us }, s.league);
+}
+function renderWP() {
+  if (!sim.s) return;
+  const wp = sim.over ? (lead(sim.s, "us") > 0 ? 1 : lead(sim.s, "us") < 0 ? 0 : 0.5) : ourWP();
+  $("sim-wp-fill").style.width = `${(wp * 100).toFixed(1)}%`;
+  $("sim-wp-num").textContent = `${Math.round(wp * 100)}%`;
+  $("sim-wp").classList.toggle("low", wp < 0.3);
+  $("sim-wp").classList.toggle("high", wp > 0.7);
+}
+
+// ---------- Teams (NFL): real colors and EPA ratings ----------
+function luminance(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+  if (!m) return 0.5;
+  const n = parseInt(m[1], 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function applyTeamColors() {
+  const root = $("sim");
+  ["us", "them"].forEach((side) => {
+    const t = sim.teams && NFL_DATA.teams[sim.teams[side]];
+    if (!t) { ["", "-ink", "-text"].forEach((x) => root.style.removeProperty(`--${side}${x}`)); return; }
+    root.style.setProperty(`--${side}`, t.color);
+    root.style.setProperty(`--${side}-ink`, luminance(t.color) < 0.35 ? "#fff" : "#000");
+    const text = luminance(t.color) > 0.12 ? t.color : luminance(t.color2) > 0.12 ? t.color2 : "#fff";
+    root.style.setProperty(`--${side}-text`, text);
+  });
+}
+function renderTeamPickers() {
+  const nfl = state.league === "nfl";
+  $("team-pickers").classList.toggle("hidden", !nfl);
+  if (!nfl) return;
+  const opts = Object.entries(NFL_DATA.teams).sort((a, b) => a[1].name.localeCompare(b[1].name))
+    .map(([k, t]) => `<option value="${k}">${t.name}</option>`).join("");
+  ["team-us", "team-them"].forEach((id, i) => {
+    const sel = $(id);
+    const keep = sel.value || loadPref(`headset-${id}`) || (i === 0 ? "KC" : "BUF");
+    sel.innerHTML = opts;
+    sel.value = NFL_DATA.teams[keep] ? keep : Object.keys(NFL_DATA.teams)[i];
+    sel.onchange = () => { savePref(`headset-${id}`, sel.value); renderTeamBlurb(); };
+  });
+  renderTeamBlurb();
+}
+function renderTeamBlurb() {
+  const T = NFL_DATA.teams, a = T[$("team-us").value], b = T[$("team-them").value];
+  if (!a || !b) return;
+  const f = (x) => `${x >= 0 ? "+" : ""}${x.toFixed(2)}`;
+  $("team-blurb").textContent = `EPA/play vs. average (2025 + 2026 so far) · ${a.nick}: pass ${f(a.offPass)}, run ${f(a.offRun)} on offense; ${f(-a.defPass)} / ${f(-a.defRun)} on defense. ${b.nick}: pass ${f(b.offPass)}, run ${f(b.offRun)}; ${f(-b.defPass)} / ${f(-b.defRun)} on defense.`;
+}
 
 // ---------- Menu ----------
 function renderSimMenu() {
@@ -155,11 +244,17 @@ function startDrive(id) {
   SFX.start();
   startMusic();
   sim.drive = d;
+  sim.teams = state.league === "nfl" ? { us: $("team-us").value, them: $("team-them").value } : null;
+  if (sim.teams && sim.teams.us === sim.teams.them) sim.teams = null;
+  applyTeamColors();
   const st = JSON.parse(JSON.stringify(d.start));
   sim.s = { down: 1, distance: 10, ...st, league: state.league, warningUsed: st.clock <= 120 };
   Object.assign(sim, { log: [], notes: [], over: false, busy: false, awaitingTry: false, tempo: "normal", wasted: 0,
-    stats: { plays: 0, yards: 0, timeoutsUsed: 0, stops: 0 } });
-  $("sim-title").textContent = `${d.title} · ${LEAGUE_NAME[state.league]} rules`;
+    stats: { plays: 0, yards: 0, timeoutsUsed: 0, stops: 0 },
+    epaOff: 0, offPlays: 0, epaDef: 0, defPlays: 0, swings: [], wpHist: [], pending: null });
+  const T = sim.teams && NFL_DATA.teams;
+  $("sim-title").textContent = `${d.title} · ${T ? `${T[sim.teams.us].nick} vs ${T[sim.teams.them].nick}` : `${LEAGUE_NAME[state.league]} rules`}`;
+  sim.wpHist.push(ourWP());
   $("sim-end").classList.add("hidden");
   $("sim-panel").classList.remove("hidden");
   addLog(d.blurb, "info");
@@ -175,6 +270,7 @@ function simSit() {
     quarter: s.quarter, clock: fmt(s.clock), clockRunning: s.clockRunning, score: s.score,
     possession: s.poss, down: s.down, distance: s.distance, yardLine: Math.round(s.yardLine),
     goalToGo: s.yardLine + s.distance >= 100, timeouts: s.timeouts, pat: sim.awaitingTry,
+    teams: sim.teams ? { us: sim.teams.us, them: sim.teams.them } : undefined,
   };
 }
 function renderSim() {
@@ -183,6 +279,7 @@ function renderSim() {
   renderField(sit, $("sim-field"));
   renderCalls();
   renderSimClock();
+  renderWP();
 }
 
 function renderCalls() {
@@ -192,9 +289,10 @@ function renderCalls() {
   $("sim-side").className = `side-tag ${onOffense() ? "off" : "def"}`;
   $("tempo-wrap").classList.toggle("hidden", !onOffense() || sim.awaitingTry);
   if (sim.awaitingTry) {
+    const tv = tryValues({ diffAfterTD: lead(s, "us"), secs: gameSecs(s), posTO: s.timeouts.us, defTO: s.timeouts.them }, s.league);
     box.innerHTML = `
-      <button class="call" data-try="pat"><span>Kick the PAT</span><small>~${s.league === "cfb" ? 98 : 94}%, 1 point</small></button>
-      <button class="call" data-try="two"><span>Go for two</span><small>~48%, 2 points</small></button>`;
+      <button class="call" data-try="pat"><span>Kick the PAT</span><small>${Math.round(leagueData(s.league).kick.xp * 100)}%, 1 point · win prob ${pct(tv.pat)}</small></button>
+      <button class="call" data-try="two"><span>Go for two</span><small>${Math.round((leagueData(s.league).kick.two || NFL_DATA.kick.two) * 100)}%, 2 points · win prob ${pct(tv.two)}</small></button>`;
     box.querySelectorAll("[data-try]").forEach((b) => (b.onclick = () => runTry("us", b.dataset.try)));
     return;
   }
@@ -253,10 +351,31 @@ function lockSimCalls() {
   aud.textContent = onOffense() ? "Let QB audible" : "Line up in base";
 }
 
-function addLog(text, kind = "") {
-  sim.log.unshift({ text, kind, clock: fmt(sim.s.clock), q: sim.s.quarter });
-  $("sim-log").innerHTML = sim.log.slice(0, 50).map((l) =>
-    `<li class="${l.kind}"><span class="log-clock">Q${l.q} ${l.clock}</span>${l.text}</li>`).join("");
+function addLog(text, kind = "", extra = {}) {
+  sim.log.unshift({ text, kind, clock: fmt(sim.s.clock), q: sim.s.quarter, ...extra });
+  renderLog();
+  return sim.log[0];
+}
+function renderLog() {
+  $("sim-log").innerHTML = sim.log.slice(0, 60).map((l) =>
+    `<li class="${l.kind}"><span class="log-clock">Q${l.q} ${l.clock}</span>${l.text}${l.real ? `<span class="log-real">Real play: ${l.real}</span>` : ""}${l.meta ? `<span class="log-meta">${l.meta}</span>` : ""}</li>`).join("");
+}
+
+// Each snap's EPA and win-probability change are settled at the next snap, once kickoffs,
+// tries and possession changes have played out.
+function finalizePlay() {
+  const p = sim.pending;
+  if (!p) return;
+  sim.pending = null;
+  const wpAfter = sim.over ? (lead(sim.s, "us") > 0 ? 1 : lead(sim.s, "us") < 0 ? 0 : 0.5) : ourWP();
+  const dwp = wpAfter - p.wp;
+  if (p.off === "us") { sim.epaOff += p.epa; sim.offPlays++; } else { sim.epaDef += p.epa; sim.defPlays++; }
+  sim.wpHist.push(wpAfter);
+  sim.swings.push({ dwp, text: p.text, q: p.q, clock: p.clock });
+  const goodForUs = (p.off === "us") === (p.epa >= 0);
+  p.entry.meta = `<b class="${goodForUs ? "pos" : "neg"}">${p.off === "us" ? "Your" : "Their"} EPA ${signed(p.epa)}</b> · win probability ${pct(wpAfter)} <b class="${dwp >= 0 ? "pos" : "neg"}">(${signed(dwp * 100, 1)})</b>`;
+  renderLog();
+  renderWP();
 }
 function note(text, good = false) {
   if (!sim.notes.some((n) => n.text === text)) sim.notes.push({ text, good });
@@ -271,6 +390,7 @@ function flashSimNote(text) {
 
 // ---------- Real-time decision clock ----------
 function newSnap(playClock = 40) {
+  finalizePlay();
   if (sim.over) return;
   sim.pc = playClock;
   sim.huddle = 0;
@@ -406,22 +526,49 @@ function aiPlan(s) {
   if (late && d > 0) {
     const k = simulateKneels({ seconds: s.clock, down: s.down, oppTimeouts: s.timeouts.us, clockRunning: s.clockRunning, warningPending: !s.warningUsed && s.clock > 120 });
     if (k.win) return "kneel";
-    if (s.down === 4) return dist <= 45 ? "fg" : "punt";
+    if (s.down === 4) return aiFourth(s);
     return pick([["runIn", 0.7], ["runOut", 0.15], ["slant", 0.15]]);
   }
   // Need points late.
   if (late && d <= 0) {
-    if (s.down === 4) {
-      if (dist <= 55 && d >= -3) return "fg";
-      return pick([["slant", 0.4], ["quickOut", 0.3], ["deep", 0.3]]);
-    }
+    if (s.down === 4) return aiFourth(s);
     if (s.clock <= 10 && dist <= 50 && d >= -3) return "fg";
     if (s.clock <= 8 && s.yardLine >= 45) return "hail";
     if (s.clockRunning && s.timeouts.them === 0 && s.clock <= 35 && s.down < 4) return "spike";
     return pick([["quickOut", 0.35], ["slant", 0.3], ["deep", 0.2], ["runOut", 0.15]]);
   }
-  if (s.down === 4) return s.yardLine < 55 ? "punt" : dist <= 50 ? "fg" : "slant";
+  if (s.down === 4) return aiFourth(s);
   return pick([["runIn", 0.45], ["runOut", 0.15], ["slant", 0.25], ["quickOut", 0.1], ["deep", 0.05]]);
+}
+
+// 4th-down decisions are graded with the win-probability model built from real play-by-play.
+const FOURTH_LABEL = { go: "going for it", punt: "punting", fg: "a field goal" };
+function fourthValues(team) {
+  const s = sim.s;
+  return fourthDownValues({ diff: lead(s, team), secs: gameSecs(s), dist: s.distance, yl100: 100 - s.yardLine,
+    posTO: s.timeouts[team], defTO: s.timeouts[other(team)] }, s.league);
+}
+function gradeFourth(key) {
+  const s = sim.s;
+  const choice = key === "punt" ? "punt" : key === "fg" ? "fg" : "go";
+  const { values, conv } = fourthValues("us");
+  if (!(choice in values)) return;
+  const entries = Object.entries(values).sort((a, b) => b[1] - a[1]);
+  const [bestKey, bestVal] = entries[0];
+  const where = `4th & ${s.distance} at ${spotText(Math.round(s.yardLine))} (Q${s.quarter} ${fmt(s.clock)})`;
+  addLog(`Model win probability: ${entries.map(([k, v]) => `${k === "go" ? "Go" : k === "punt" ? "Punt" : "FG"} ${pct(v)}`).join(" · ")}. 4th & ${s.distance} converts ${Math.round(conv * 100)}% in real data.`, "info");
+  if (values[choice] < bestVal - 0.01) note(`${where}: chose ${FOURTH_LABEL[choice]} (${pct(values[choice])} win probability). The model favored ${FOURTH_LABEL[bestKey]} at ${pct(bestVal)}.`);
+  else if (entries.length > 1 && bestVal - entries[1][1] > 0.01) note(`${where}: chose ${FOURTH_LABEL[choice]}, the model's best option (${pct(bestVal)}).`, true);
+}
+function aiFourth(s) {
+  const { values } = fourthValues("them");
+  const ranked = Object.entries(values).sort((a, b) => b[1] - a[1]);
+  // Real coaches are a little conservative: they take the model's call about 80% of the time.
+  let pickKey = ranked[0][0];
+  if (pickKey === "go" && ranked.length > 1 && Math.random() < 0.2) pickKey = ranked[1][0];
+  if (pickKey === "punt") return "punt";
+  if (pickKey === "fg") return "fg";
+  return s.distance <= 2 && Math.random() < 0.55 ? "runIn" : s.distance >= 8 ? "deep" : "slant";
 }
 
 // ---------- Snaps ----------
@@ -430,6 +577,7 @@ function callPlay(key, audible = false) {
   if (!audible && simLocked()) return;
   const s = sim.s;
   critiqueOffense(key);
+  if (s.down === 4) gradeFourth(key);
   const snapAt = TEMPO_SNAP[sim.tempo];
   executeSnap(key, "base", s.clockRunning ? Math.max(0, sim.pc - snapAt) : 0);
 }
@@ -476,12 +624,14 @@ async function executeSnap(key, defKey, runoff) {
   if (key === "letScore") {
     r = { yards: 100 - s.yardLine, secs: 5, letScore: true, text: "Defense steps aside — they walk into the end zone." };
   } else {
-    r = PLAYS[key].run(s, onOffense() ? MOD_BASE : modFor(defKey));
+    r = PLAYS[key].run(s, onOffense() ? null : defKey);
   }
   if (onOffense()) sim.stats.plays++;
+  sim.pending = { off: s.poss, ep: epAt(s, s.down, s.distance, s.yardLine), wp: ourWP(), q: s.quarter, clock: fmt(s.clock), epa: 0, text: "" };
   const who = onOffense() ? "" : "Opponent: ";
   if (!onOffense()) addLog(`Your call: ${DEF_CALLS[defKey].label}. They ran: ${key === "letScore" ? "a dive" : PLAYS[key].label}.`, "info");
-  addLog(who + r.text, r.int || r.fumble ? (onOffense() ? "bad" : "good") : "");
+  sim.pending.text = who + r.text;
+  sim.pending.entry = addLog(who + r.text, r.int || r.fumble ? (onOffense() ? "bad" : "good") : "", { real: r.realDesc });
 
   // The clock runs during the play once the ball is snapped.
   const startClock = s.clock;
@@ -499,6 +649,10 @@ function resolvePlay(r, key, warningHit, periodOver) {
   const s = sim.s;
   const offense = s.poss, defense = other(offense);
   const good = offense === "us";
+  // EPA for the offense: expected points after the play (or points scored, or minus the
+  // other team's expected points after a change of possession) minus expected points before.
+  const epa = (v) => { if (sim.pending) sim.pending.epa = v - sim.pending.ep; };
+  const oppEP = (theirYardLine) => -epAt(s, 1, 10, theirYardLine);
 
   if (r.int || r.fumble) {
     (good ? SFX.bad : SFX.best)();
@@ -506,10 +660,12 @@ function resolvePlay(r, key, warningHit, periodOver) {
     if (!good) sim.stats.stops++;
     const spot = Math.min(99, Math.max(1, s.yardLine + (r.yards || 0)));
     const ret = r.int ? irnd(0, 15) : 0;
+    epa(oppEP(Math.max(1, 100 - spot + ret)));
     return changePossession(Math.max(1, 100 - spot + ret), periodOver, "turnover");
   }
   if (r.fg) {
     if (r.good) {
+      epa(3);
       s.score[offense] += 3;
       (good ? SFX.fanfare : SFX.bad)();
       banner("IT'S GOOD!", good ? "best" : "bad");
@@ -517,16 +673,19 @@ function resolvePlay(r, key, warningHit, periodOver) {
     }
     (good ? SFX.bad : SFX.best)();
     banner("NO GOOD", good ? "bad" : "best");
+    epa(oppEP(Math.max(20, 100 - (s.yardLine - 7))));
     return changePossession(Math.max(20, 100 - (s.yardLine - 7)), periodOver, "missed field goal");
   }
   if (r.punt) {
     const land = s.yardLine + r.net;
+    epa(oppEP(land >= 100 ? 20 : 100 - land));
     return changePossession(land >= 100 ? 20 : 100 - land, periodOver, "punt");
   }
 
   const newYL = s.yardLine + r.yards;
   if (good) sim.stats.yards += r.yards;
   if (newYL >= 100) {
+    epa(6 + leagueData(s.league).kick.xp);
     s.score[offense] += 6;
     (good ? SFX.fanfare : SFX.bad)();
     banner("TOUCHDOWN!", good ? "best" : "bad");
@@ -542,6 +701,7 @@ function resolvePlay(r, key, warningHit, periodOver) {
     return runTry("them", aiTryChoice(s));
   }
   if (newYL <= 0) {
+    epa(-2);
     s.score[defense] += 2;
     (good ? SFX.bad : SFX.best)();
     banner("SAFETY", good ? "bad" : "best");
@@ -561,8 +721,10 @@ function resolvePlay(r, key, warningHit, periodOver) {
     banner("TURNOVER ON DOWNS", good ? "bad" : "best");
     addLog("Turnover on downs.", good ? "bad" : "good");
     if (!good) sim.stats.stops++;
+    epa(oppEP(100 - s.yardLine));
     return changePossession(100 - s.yardLine, periodOver, "downs");
   }
+  epa(epAt(s, s.down, s.distance, s.yardLine));
   if (r.yards >= 10) (good ? SFX.best : SFX.bad)(); else if (r.inc || r.sack) (good ? SFX.ok : SFX.best)(); else SFX.click();
 
   // Clock after the play.
@@ -602,7 +764,8 @@ function aiTryChoice(s) {
 
 function runTry(team, kind) {
   const s = sim.s;
-  const good = kind === "pat" ? chance(s.league === "cfb" ? 0.98 : 0.94) : chance(0.48);
+  const K = leagueData(s.league).kick;
+  const good = Math.random() < (kind === "pat" ? K.xp : K.two || NFL_DATA.kick.two);
   const diffBefore = lead(s, team);
   if (good) s.score[team] += kind === "pat" ? 1 : 2;
   const label = `${team === "us" ? "" : "Opponent "}${kind === "pat" ? "extra point" : "two-point try"} ${good ? "is GOOD" : "FAILS"}.`;
@@ -677,6 +840,7 @@ function endPeriod() {
   sim.busy = true;
   stopSimClock();
   s.clock = 0;
+  finalizePlay();
   renderSim();
   const d = lead(s, "us");
   const start = sim.drive.start.score;
@@ -705,10 +869,16 @@ function endPeriod() {
       <div class="stat"><span class="stat-label">Your yards</span><span class="stat-value">${sim.stats.yards}</span></div>
       <div class="stat"><span class="stat-label">Defensive stops</span><span class="stat-value">${sim.stats.stops}</span></div>
       <div class="stat"><span class="stat-label">Timeouts used</span><span class="stat-value">${sim.stats.timeoutsUsed}</span></div>
+      <div class="stat"><span class="stat-label">Your offense EPA</span><span class="stat-value ${sim.epaOff >= 0 ? "pos" : "neg"}">${signed(sim.epaOff, 1)}${sim.offPlays ? ` <small>(${signed(sim.epaOff / sim.offPlays)}/play)</small>` : ""}</span></div>
+      <div class="stat"><span class="stat-label">EPA allowed on defense</span><span class="stat-value ${sim.epaDef <= 0 ? "pos" : "neg"}">${signed(sim.epaDef, 1)}${sim.defPlays ? ` <small>(${signed(sim.epaDef / sim.defPlays)}/play)</small>` : ""}</span></div>
     </div>
+    <h3>Win probability</h3>
+    ${wpChart(sim.wpHist)}
+    <ul class="swings">${[...sim.swings].sort((a, b) => Math.abs(b.dwp) - Math.abs(a.dwp)).slice(0, 3)
+      .map((w) => `<li><b class="${w.dwp >= 0 ? "pos" : "neg"}">${signed(w.dwp * 100, 1)} pts</b> Q${w.q} ${w.clock}: ${w.text}</li>`).join("")}</ul>
     <h3>Film room</h3>
     <ul class="film">${[...badN.map((n) => `<li class="bad">✗ ${n.text}</li>`), ...goodN.map((n) => `<li class="good">✓ ${n.text}</li>`)].join("") || "<li>Clean game management. No red flags.</li>"}</ul>
-    <p class="fine">Play outcomes are randomized with game-style odds, so the same calls can play out differently. Judge the calls in the film room, not just the scoreboard.</p>
+    <p class="fine">Every snap was drawn from real ${s.league === "cfb" ? "college (cfbfastR 2024–25)" : "NFL (nflverse 2023–25)"} plays of that type${s.league === "nfl" ? ", matched to your defensive call using FTN charting" : ""}${sim.teams ? ", weighted by each team's real EPA per play" : ""}. EPA and win probability come from models fit to the same data. The same calls can still play out differently, so judge the calls in the film room, not just the scoreboard.</p>
     <div class="btn-row">
       <button class="primary" id="sim-again">▶ Run it back</button>
       <button class="primary alt" id="sim-menu">Other drives</button>
@@ -717,6 +887,17 @@ function endPeriod() {
   $("sim-panel").classList.add("hidden");
   $("sim-again").onclick = () => startDrive(sim.drive.id);
   $("sim-menu").onclick = () => { renderHome(); $("sim-menu-card").scrollIntoView(); };
+}
+
+function wpChart(hist) {
+  if (hist.length < 2) return "";
+  const W = 320, H = 90;
+  const pts = hist.map((v, i) => `${(i / (hist.length - 1)) * W},${(1 - v) * H}`).join(" ");
+  return `<svg class="wp-chart" viewBox="-4 -4 ${W + 8} ${H + 8}" role="img" aria-label="Your win probability over the drive, from ${pct(hist[0])} to ${pct(hist[hist.length - 1])}">
+    <line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" class="mid"/>
+    <polyline points="${pts}" class="line"/>
+    <circle cx="${W}" cy="${(1 - hist[hist.length - 1]) * H}" r="4" class="dot"/>
+  </svg>`;
 }
 
 // ---------- Wiring ----------
@@ -739,3 +920,5 @@ document.addEventListener("visibilitychange", () => {
 });
 document.querySelectorAll("[data-nav]").forEach((b) => b.addEventListener("click", stopSimClock));
 renderSimMenu();
+renderTeamPickers();
+document.querySelectorAll("[data-league]").forEach((b) => b.addEventListener("click", renderTeamPickers));
