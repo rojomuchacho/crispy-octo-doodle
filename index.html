@@ -41,7 +41,7 @@
           <button data-league="nfl" role="tab">NFL</button>
           <button data-league="cfb" role="tab">College</button>
         </div>
-        <label class="switch"><input type="checkbox" id="clock-toggle" checked /> <span>40-sec play clock</span></label>
+        <label class="switch"><input type="checkbox" id="clock-toggle" checked /> <span>Real clock: play clock, game clock, headset cutoff, timeouts</span></label>
       </div>
       <div class="modes">
         <div class="card feature mode">
@@ -62,7 +62,16 @@
         <h2>Practice a category</h2>
         <div id="category-list" class="chips"></div>
       </div>
-      <p class="fine keys">Keyboard: <kbd>1</kbd>–<kbd>4</kbd> pick a call · <kbd>Enter</kbd> next</p>
+      <p class="fine keys">Keyboard: <kbd>1</kbd>–<kbd>4</kbd> pick a call · <kbd>T</kbd> timeout · <kbd>Enter</kbd> next</p>
+      <div class="card how-clock">
+        <h2>You get the time a real coach gets</h2>
+        <ul>
+          <li><b>Play clock:</b> 40 seconds after a normal play; 25 after a timeout or the two-minute warning. At :00 it's delay of game.</li>
+          <li><b>Headset:</b> your radio to the field cuts out at :15. Calls after that still count but earn no speed bonus.</li>
+          <li><b>Game clock:</b> if it's running in the situation, it runs while you think. Let it hit 0:00 and the game ends.</li>
+          <li><b>Timeouts:</b> spend one of your team's real timeouts to stop the game clock and get a 30-second huddle, then a 25-second play clock.</li>
+        </ul>
+      </div>
     </section>
 
     <!-- Scenario -->
@@ -70,7 +79,7 @@
       <div class="hud">
         <div class="hud-item"><span class="hud-label">Score</span><span class="hud-value" id="hud-score">0</span></div>
         <div class="hud-item"><span class="hud-label">Streak</span><span class="hud-value" id="hud-streak">0</span></div>
-        <div class="hud-item" id="hud-clock-wrap"><span class="hud-label">Play clock</span><span class="hud-value" id="hud-clock">40</span></div>
+        <div class="hud-item" id="hud-clock-wrap"><span class="hud-label" id="hud-clock-label">Play clock</span><span class="hud-value" id="hud-clock">40</span></div>
         <div class="pips" id="pips" aria-hidden="true"></div>
       </div>
       <p class="progress" id="progress-text"></p>
@@ -85,6 +94,11 @@
           </div>
         </div>
         <div class="play-right">
+          <div class="clock-tools" id="clock-tools">
+            <span class="led on" id="headset-led">Headset on</span>
+            <button class="tool-btn" id="timeout-btn">Call timeout</button>
+            <span class="clock-note hidden" id="clock-note" role="status"></span>
+          </div>
           <div id="options" class="options"></div>
           <div id="reveal" class="reveal" aria-live="polite">
             <div id="real-card" class="real-card hidden"></div>
@@ -161,6 +175,7 @@
           <li><b>Incomplete pass / out of bounds:</b> clock stops. Outside the last 2:00 of the 1st half and last 5:00 of the 2nd, out-of-bounds restarts on the ready-for-play signal.</li>
           <li><b>First down:</b> in the NFL the clock does <i>not</i> stop for a first down (unlike college).</li>
           <li><b>Play clock:</b> 40 seconds after a play ends; 25 after a timeout or administrative stoppage.</li>
+          <li><b>Headset cutoff:</b> coach-to-player radio shuts off with 15 seconds on the play clock (college uses the same cutoff since adding helmet radios in 2024).</li>
           <li><b>Two-minute warning:</b> automatic stoppage at 2:00 of each half — a free timeout.</li>
           <li><b>10-second runoff:</b> inside the final minute of a half, an offensive foul that stops the clock lets the defense run 10 seconds off. A timeout avoids it.</li>
           <li><b>Spike:</b> stops the clock but costs a down. Never spike on 4th down.</li>

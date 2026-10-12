@@ -464,3 +464,18 @@ kbd { font-family: var(--pixel); font-size: 0.55rem; background: #000; border: 2
 
 .topbar { flex-wrap: wrap; }
 .topbar nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+
+/* ---------- Real clock tools ---------- */
+.clock-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 10px 0 12px; }
+.led { font-family: var(--pixel); font-size: 0.5rem; text-transform: uppercase; padding: 7px 10px; background: #000; border: 3px solid currentColor; }
+.led::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; background: currentColor; box-shadow: 0 0 8px currentColor; vertical-align: 0; }
+.led.on { color: var(--best); }
+.led.off { color: var(--bad); animation: pulse 0.6s steps(2) 3; }
+.tool-btn {
+  font-family: var(--pixel); font-size: 0.5rem; text-transform: uppercase;
+  background: #000; color: var(--cyan); border: 3px solid var(--cyan); padding: 8px 10px; box-shadow: 4px 4px 0 #000;
+}
+.tool-btn:hover:not(:disabled) { background: var(--cyan); color: #000; }
+.tool-btn:disabled { color: var(--muted); border-color: #3a2f5c; cursor: not-allowed; box-shadow: none; }
+.clock-note { font-family: var(--pixel); font-size: 0.5rem; color: var(--accent); text-transform: uppercase; line-height: 1.6; }
+.how-clock ul { margin-bottom: 0; }

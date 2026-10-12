@@ -3,7 +3,10 @@ const POINTS = { best: 100, ok: 50, bad: 0 };
 const GRADE_LABEL = { best: "BEST", ok: "OK", bad: "MISS" };
 const BANNER = { best: "GREAT CALL!", ok: "NOT BAD", bad: "FLAG!", timeout: "DELAY OF GAME" };
 const GAME_LENGTH = 10;
-const PLAY_CLOCK_SECS = 40;
+const PLAY_CLOCK_SECS = 40;      // after a normal play
+const PLAY_CLOCK_SHORT = 25;     // after a timeout or the two-minute warning
+const HEADSET_CUTOFF = 15;       // coach-to-player radio shuts off at :15 on the play clock
+const HUDDLE_SECS = 30;          // thinking time while your timeout is on
 const STREAK_FOR_BONUS = 3;
 const LEAGUE_NAME = { nfl: "NFL", cfb: "College" };
 
@@ -18,6 +21,10 @@ const state = {
   mode: "random",
   queue: [], index: 0, score: 0, streak: 0, bestStreak: 0, results: [],
   timer: null, timeLeft: PLAY_CLOCK_SECS, answered: false,
+  live: null,          // live copy of the situation: game clock, timeouts
+  gameSecs: null,      // game clock in seconds while it is running
+  huddle: 0,           // seconds left in a timeout huddle
+  timeoutsUsed: 0,
 };
 
 function loadPref(key) {
@@ -120,6 +127,7 @@ const SFX = {
     noise(0.1, 1.2, { freq: 300, q: 1.2, vol: 0.09, attack: 0.3 }); // crowd groan
   }),
   tick: sfx(() => tone(1200, 0, 0.03, "square", 0.03)),
+  static: sfx(() => { noise(0, 0.35, { freq: 3000, q: 0.3, vol: 0.06, attack: 0.005 }); tone(440, 0.05, 0.12, "square", 0.02, 220); }),
   whistle: sfx(() => {
     tone(2600, 0, 0.12, "sine", 0.05);
     tone(2400, 0.15, 0.32, "sine", 0.05);
@@ -211,19 +219,20 @@ function startGame(pool, mode = "random") {
   Object.assign(state, {
     mode,
     queue: mode === "real" ? [...pool] : shuffle(pool).slice(0, GAME_LENGTH),
-    index: 0, score: 0, streak: 0, bestStreak: 0, results: [],
+    index: 0, score: 0, streak: 0, bestStreak: 0, results: [], timeoutsUsed: 0,
   });
   renderScenario();
   show("play");
 }
 
-// ---------- HUD + play clock ----------
+// ---------- HUD + real clocks ----------
 function renderHud() {
   $("hud-score").textContent = state.score.toLocaleString();
   const streak = $("hud-streak");
   streak.textContent = state.streak >= STREAK_FOR_BONUS ? `${state.streak} x2` : String(state.streak);
   streak.classList.toggle("hot", state.streak >= STREAK_FOR_BONUS);
   $("hud-clock-wrap").classList.toggle("hidden", !state.clockOn);
+  $("clock-tools").classList.toggle("hidden", !state.clockOn);
   $("pips").innerHTML = state.queue.map((_, i) => {
     const r = state.results[i];
     const cls = r ? (r.picked ? r.picked.grade : "bad") : i === state.index ? "current" : "";
@@ -231,27 +240,116 @@ function renderHud() {
   }).join("");
 }
 
+const parseGameClock = (str) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(str || ""));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+const fmtGameClock = (secs) => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+
+// One tick per second: huddle (if a timeout is on), then the play clock and the game clock.
 function runClock() {
   stopClock();
   if (!state.clockOn) return;
-  state.timer = setInterval(() => {
-    state.timeLeft--;
-    renderClock();
-    if (state.timeLeft <= 5 && state.timeLeft > 0) SFX.tick();
-    if (state.timeLeft <= 0) {
-      stopClock();
-      choose(state.queue[state.index], null);
-    }
-  }, 1000);
+  state.timer = setInterval(tick, 1000);
 }
+function tick() {
+  if (state.huddle > 0) {
+    state.huddle--;
+    if (state.huddle === 0) {
+      state.timeLeft = PLAY_CLOCK_SHORT;
+      SFX.snap();
+    }
+    renderClock();
+    return;
+  }
+  state.timeLeft--;
+  if (state.timeLeft === HEADSET_CUTOFF) SFX.static();
+  if (state.timeLeft <= 5 && state.timeLeft > 0) SFX.tick();
+  if (tickGameClock()) return;
+  renderClock();
+  if (state.timeLeft <= 0) {
+    stopClock();
+    choose(state.queue[state.index], null);
+  }
+}
+
+// Returns true if the game clock just hit 0:00 and ended the decision.
+function tickGameClock() {
+  const live = state.live;
+  if (!live || !live.clockRunning || state.gameSecs == null) return false;
+  const before = state.gameSecs;
+  state.gameSecs = Math.max(0, before - 1);
+  if ((live.quarter === 2 || live.quarter === 4) && before > 120 && state.gameSecs <= 120) {
+    state.gameSecs = 120;
+    live.clockRunning = false;
+    state.timeLeft = PLAY_CLOCK_SHORT;
+    flashNote("Two-minute warning");
+    SFX.whistle();
+  }
+  live.clock = fmtGameClock(state.gameSecs);
+  renderScoreboard(live);
+  if (state.gameSecs === 0) {
+    stopClock();
+    choose(state.queue[state.index], null, null, "expired");
+    return true;
+  }
+  return false;
+}
+
 function stopClock() {
   clearInterval(state.timer);
   state.timer = null;
 }
+
 function renderClock() {
   const el = $("hud-clock");
-  el.textContent = String(Math.max(0, state.timeLeft)).padStart(2, "0");
-  el.classList.toggle("danger", state.timeLeft <= 10);
+  const label = $("hud-clock-label");
+  const led = $("headset-led");
+  if (state.huddle > 0) {
+    label.textContent = "Timeout";
+    el.textContent = String(state.huddle).padStart(2, "0");
+    el.classList.remove("danger");
+    led.className = "led on";
+    led.textContent = "Headset on";
+  } else {
+    label.textContent = "Play clock";
+    el.textContent = String(Math.max(0, state.timeLeft)).padStart(2, "0");
+    el.classList.toggle("danger", state.timeLeft <= 10);
+    const on = state.timeLeft > HEADSET_CUTOFF;
+    led.className = `led ${on ? "on" : "off"}`;
+    led.textContent = on ? `Headset on · cuts out at :${HEADSET_CUTOFF}` : "Headset off";
+  }
+  renderTimeoutButton();
+}
+
+function renderTimeoutButton() {
+  const btn = $("timeout-btn");
+  const left = state.live ? state.live.timeouts.us : null;
+  // Back-to-back timeouts aren't allowed, so one per decision.
+  const can = !state.answered && !state.usedTimeout && left != null && left > 0 && !state.live.coinToss;
+  btn.disabled = !can;
+  btn.textContent = left == null ? "Timeouts not reported" : `Call timeout (${left} left)`;
+}
+
+function callTimeout() {
+  if ($("timeout-btn").disabled) return;
+  state.live.timeouts.us--;
+  state.live.clockRunning = false;
+  state.timeoutsUsed++;
+  state.usedTimeout = true;
+  state.huddle = HUDDLE_SECS;
+  SFX.whistle();
+  flashNote("Timeout");
+  renderScoreboard(state.live);
+  renderClock();
+}
+
+function flashNote(text) {
+  const n = $("clock-note");
+  n.textContent = text;
+  n.classList.remove("hidden");
+  clearTimeout(flashNote.t);
+  flashNote.t = setTimeout(() => n.classList.add("hidden"), 1800);
 }
 
 // ---------- Scoreboard + field ----------
@@ -357,13 +455,18 @@ function animateField(sc, grade) {
 function renderScenario() {
   const sc = state.queue[state.index];
   state.answered = false;
-  state.timeLeft = PLAY_CLOCK_SECS;
+  state.huddle = 0;
+  state.usedTimeout = false;
+  state.live = JSON.parse(JSON.stringify(sc.situation));
+  state.gameSecs = state.live.clockRunning ? parseGameClock(state.live.clock) : null;
+  // The two-minute warning (clock stopped at 2:00) resets the play clock to 25.
+  state.timeLeft = !state.live.clockRunning && state.live.clock === "2:00" ? PLAY_CLOCK_SHORT : PLAY_CLOCK_SECS;
   $("progress-text").textContent = state.mode === "real"
     ? `Real Moment ${state.index + 1} of ${state.queue.length} · ${sc.game}`
     : `Situation ${state.index + 1} of ${state.queue.length}`;
   renderHud();
   renderClock();
-  renderScoreboard(sc.situation);
+  renderScoreboard(state.live);
   renderField(sc.situation);
   $("sc-category").textContent = CATEGORIES[sc.category];
   $("sc-title").textContent = sc.title;
@@ -385,22 +488,26 @@ function renderScenario() {
   runClock();
 }
 
-function choose(sc, picked, pickedBtn) {
+function choose(sc, picked, pickedBtn, reason) {
   if (state.answered) return;
   state.answered = true;
   stopClock();
+  renderTimeoutButton();
   const grade = picked ? picked.grade : "bad";
+  // A call made after the headset cut out still counts, but earns no speed bonus.
+  const late = state.clockOn && picked && state.huddle === 0 && state.timeLeft <= HEADSET_CUTOFF;
 
   let gained = 0;
   if (grade === "best") state.streak++; else state.streak = 0;
   if (grade !== "bad") {
-    const speed = state.clockOn ? Math.round((state.timeLeft / PLAY_CLOCK_SECS) * 50) : 0;
+    const beforeCutoff = state.huddle > 0 ? 0 : Math.max(0, state.timeLeft - HEADSET_CUTOFF);
+    const speed = state.clockOn ? Math.round((beforeCutoff / (PLAY_CLOCK_SECS - HEADSET_CUTOFF)) * 50) : 0;
     const mult = state.streak >= STREAK_FOR_BONUS ? 2 : 1;
-    gained = (POINTS[grade] + speed) * mult;
+    gained = (POINTS[grade] + Math.min(50, speed)) * mult;
   }
   state.bestStreak = Math.max(state.bestStreak, state.streak);
   state.score += gained;
-  state.results.push({ sc, picked, gained });
+  state.results.push({ sc, picked, gained, reason });
 
   document.querySelectorAll(".option").forEach((b) => {
     const opt = b._opt;
@@ -411,7 +518,9 @@ function choose(sc, picked, pickedBtn) {
     b.innerHTML = `<span class="grade ${opt.grade}">${GRADE_LABEL[opt.grade]}</span>${realTag}<span class="opt-text">${opt.text}</span><span class="fb">${opt.feedback}</span>`;
   });
 
-  showBanner(picked ? BANNER[grade] : BANNER.timeout, grade, gained);
+  const bannerText = reason === "expired" ? "TIME EXPIRED" : picked ? BANNER[grade] : BANNER.timeout;
+  showBanner(bannerText, grade, gained);
+  if (late) flashNote("Late call: headset was off, so no speed bonus");
   (picked ? SFX[grade] : SFX.whistle)();
   animateField(sc, grade);
   renderHud();
@@ -488,6 +597,7 @@ function renderResults() {
     ["Accuracy", `${pct}%`],
     ["Best calls", `${bests}/${state.queue.length}`],
     ["Top streak", String(state.bestStreak)],
+    ...(state.clockOn ? [["Timeouts used", String(state.timeoutsUsed)]] : []),
   ].map(([k, v]) => `<div class="stat"><span class="stat-label">${k}</span><span class="stat-value">${v}</span></div>`).join("");
 
   const realResults = state.results.filter((r) => r.sc.real);
@@ -496,11 +606,11 @@ function renderResults() {
     ? `You matched the real coach on ${same} of ${realResults.length} calls.`
     : "";
   const marks = { best: "✅", ok: "🟡", bad: "❌" };
-  $("review").innerHTML = state.results.map(({ sc, picked }) => {
+  $("review").innerHTML = state.results.map(({ sc, picked, reason }) => {
     const best = sc.options.find((o) => o.grade === "best");
     let extra = picked && picked.grade === "best" ? "" : `<div class="fine">Best call: ${best.text}</div>`;
     if (sc.real) extra += `<div class="fine">${sc.real.coach}'s call: ${sc.options.find((o) => o.real).text}</div>`;
-    const choice = picked ? picked.text : "Delay of game (play clock ran out)";
+    const choice = picked ? picked.text : reason === "expired" ? "Nothing: the game clock ran out" : "Delay of game (play clock ran out)";
     return `<div class="review-item"><span class="mark">${marks[picked ? picked.grade : "bad"]}</span><b>${sc.title}</b> — you chose: ${choice}${extra}</div>`;
   }).join("");
   stopMusic();
@@ -548,6 +658,7 @@ document.querySelectorAll("[data-nav]").forEach((b) => {
 $("start-all").onclick = () => startGame(leaguePool());
 $("start-real").onclick = () => startGame(realPool(), "real");
 $("next-btn").onclick = nextScenario;
+$("timeout-btn").onclick = callTimeout;
 $("play-again").onclick = () => { startMusic(); renderHome(); };
 $("music-toggle").onclick = () => {
   state.musicOn = !state.musicOn;
@@ -575,7 +686,9 @@ document.querySelectorAll("[data-league]").forEach((b) => {
 
 document.addEventListener("keydown", (e) => {
   if ($("play").classList.contains("hidden") || e.target.matches("input, select, textarea")) return;
-  if (!state.answered && /^[1-4]$/.test(e.key)) {
+  if (!state.answered && (e.key === "t" || e.key === "T")) {
+    callTimeout();
+  } else if (!state.answered && /^[1-4]$/.test(e.key)) {
     const btn = document.querySelectorAll(".option")[Number(e.key) - 1];
     if (btn) btn.click();
   } else if (state.answered && e.key === "Enter") {
