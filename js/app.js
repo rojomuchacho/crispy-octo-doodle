@@ -394,12 +394,25 @@ function renderScoreboard(sit) {
     ${team("them")}`;
 }
 
-// Field is 120 units wide (two 10-yard end zones); offense always drives left → right.
-const fieldPct = (yl) => ((10 + yl) / 120) * 100;
+// The field is a zoomed camera on the line of scrimmage, like a broadcast angle.
+// Yards run from -10 (back of the offense's end zone) to 110; offense drives left → right.
+const view = { start: 0, span: 32 };
+const fieldPct = (yl) => ((yl - view.start) / view.span) * 100;
+function setView(los) {
+  view.span = window.innerWidth < 640 ? 22 : 32;
+  const behind = view.span * 0.4; // show more of the field ahead of the ball
+  view.start = Math.min(110 - view.span, Math.max(-10, los - behind));
+}
 
-// Formations as [yards from the line of scrimmage, % from the top of the field].
-const OFFENSE = [[-1, 30], [-1, 40], [-1, 50], [-1, 60], [-1, 70], [-1, 80], [-1, 8], [-1, 92], [-5, 50], [-7, 50], [-1.5, 20]];
-const DEFENSE = [[1, 32], [1, 44], [1, 56], [1, 68], [4, 38], [4, 50], [4, 62], [7, 12], [7, 88], [12, 40], [12, 60]];
+// Formations as [yards from the line of scrimmage, % from the top of the field, position].
+const OFFENSE = [
+  [-1, 32, "LT"], [-1, 41, "LG"], [-1, 50, "C"], [-1, 59, "RG"], [-1, 68, "RT"], [-1, 77, "TE"],
+  [-1, 9, "WR"], [-1, 91, "WR"], [-2, 20, "WR"], [-5, 50, "QB"], [-5.5, 62, "RB"],
+];
+const DEFENSE = [
+  [1, 36, "DE"], [1, 45.5, "DT"], [1, 54.5, "DT"], [1, 64, "DE"], [5, 30, "LB"], [5, 50, "LB"], [5, 70, "LB"],
+  [6, 10, "CB"], [6, 90, "CB"], [12, 36, "S"], [12, 64, "S"],
+];
 
 function renderField(sit) {
   const field = $("field");
@@ -409,27 +422,51 @@ function renderField(sit) {
     return;
   }
   field.className = "field";
+  const los = sit.yardLine;
+  setView(los);
   const offColor = sit.possession === "us" ? "var(--us)" : "var(--them)";
   const defColor = sit.possession === "us" ? "var(--them)" : "var(--us)";
-  const los = sit.yardLine;
-  const ltg = !sit.pat && !sit.goalToGo && sit.distance != null && los + sit.distance < 100
-    ? `<div class="marker ltg" style="left:${fieldPct(los + sit.distance)}%"></div>` : "";
-  const nums = [10, 20, 30, 40, 50, 60, 70, 80, 90].map((y) =>
-    `<span class="yard-num" style="left:${fieldPct(y)}%">${y <= 50 ? y : 100 - y}</span>`).join("");
-  const clamp = (y) => Math.min(108, Math.max(-8, y));
-  const players = (list, color) => list.map(([dx, top]) =>
-    `<span class="player" style="left:${fieldPct(clamp(los + dx))}%;top:${top}%;background:${color}"></span>`).join("");
-  field.innerHTML = `
-    <div class="endzone left" style="background:${offColor}">${teamLabel(sit, sit.possession)}</div>
-    <div class="endzone right" style="background:${defColor}">${teamLabel(sit, sit.possession === "us" ? "them" : "us")}</div>
-    ${nums}
-    <div class="marker los" style="left:${fieldPct(los)}%"></div>
-    ${ltg}
-    ${players(OFFENSE, offColor)}
-    ${players(DEFENSE, defColor)}
-    <div class="football" id="football" style="left:${fieldPct(los)}%"></div>
-    <div class="penalty-flag hidden" id="flag"></div>
-    <div class="field-caption">${sit.possession === "us" ? "you're driving →" : "they're driving →"}</div>`;
+  const lo = Math.ceil(view.start), hi = Math.floor(view.start + view.span);
+  const parts = [];
+
+  // Turf stripes every 5 yards, yard lines, hash marks and numbers.
+  for (let y = Math.floor(view.start / 5) * 5; y < view.start + view.span; y += 5) {
+    if (y < 0 || y >= 100) continue;
+    const a = Math.max(fieldPct(y), 0), b = Math.min(fieldPct(y + 5), 100);
+    parts.push(`<div class="stripe ${(y / 5) % 2 ? "alt" : ""}" style="left:${a}%;width:${b - a}%"></div>`);
+  }
+  for (let y = lo; y <= hi; y++) {
+    if (y < 0 || y > 100) continue;
+    if (y % 5 === 0) parts.push(`<div class="yard-line ${y === 0 || y === 100 ? "goal" : ""}" style="left:${fieldPct(y)}%"></div>`);
+    else parts.push(`<div class="hash" style="left:${fieldPct(y)}%"></div>`);
+    if (y % 10 === 0 && y > 0 && y < 100) {
+      const n = y <= 50 ? y : 100 - y;
+      parts.push(`<span class="yard-num top" style="left:${fieldPct(y)}%">${n}</span><span class="yard-num" style="left:${fieldPct(y)}%">${n}</span>`);
+    }
+  }
+  // End zones, when the camera can see them.
+  const endzone = (from, to, color, label, side) => {
+    const a = Math.max(fieldPct(from), 0), b = Math.min(fieldPct(to), 100);
+    if (b <= 0 || a >= 100) return "";
+    return `<div class="endzone ${side}" style="left:${a}%;width:${b - a}%;background:${color}"><span>${label}</span></div>`;
+  };
+  parts.push(endzone(-10, 0, offColor, teamLabel(sit, sit.possession), "left"));
+  parts.push(endzone(100, 110, defColor, teamLabel(sit, sit.possession === "us" ? "them" : "us"), "right"));
+  if (view.start + view.span >= 109) parts.push(`<div class="goalpost" style="left:${fieldPct(110) - 1}%"></div>`);
+
+  parts.push(`<div class="marker los" style="left:${fieldPct(los)}%"></div>`);
+  if (!sit.pat && !sit.goalToGo && sit.distance != null && los + sit.distance < 100) {
+    parts.push(`<div class="marker ltg" style="left:${fieldPct(los + sit.distance)}%"><span class="chain">${sit.distance}</span></div>`);
+  }
+  const place = (list, color, side) => list.map(([dx, top, pos]) => {
+    const y = Math.min(109, Math.max(-9, los + dx));
+    return `<span class="player ${side}" style="left:${fieldPct(y)}%;top:${top}%;--team:${color}"><i>${pos}</i></span>`;
+  }).join("");
+  parts.push(place(OFFENSE, offColor, "off"), place(DEFENSE, defColor, "def"));
+  parts.push(`<div class="football" id="football" style="left:${fieldPct(los)}%"></div>`);
+  parts.push(`<div class="penalty-flag hidden" id="flag"></div>`);
+  parts.push(`<div class="field-caption">${sit.possession === "us" ? "You're on offense →" : "You're on defense · they drive →"}</div>`);
+  field.innerHTML = parts.join("");
 }
 
 function animateField(sc, grade) {
@@ -440,9 +477,13 @@ function animateField(sc, grade) {
   }
   if (grade === "best" || grade === "ok") {
     const ball = $("football");
-    const gain = grade === "best" ? 12 : 5;
-    ball.style.left = `${fieldPct(Math.min(105, sc.situation.yardLine + gain))}%`;
+    const gain = grade === "best" ? 10 : 4;
+    const pct = Math.min(97, fieldPct(Math.min(105, sc.situation.yardLine + gain)));
+    ball.style.left = `${pct}%`;
     ball.classList.add("run");
+    field.querySelectorAll(".player.off").forEach((p) => {
+      p.style.left = `${Math.min(97, parseFloat(p.style.left) + (pct - fieldPct(sc.situation.yardLine)) * 0.6)}%`;
+    });
   } else {
     const flag = $("flag");
     flag.style.left = `${fieldPct(sc.situation.yardLine)}%`;
@@ -450,6 +491,15 @@ function animateField(sc, grade) {
     if (!reduceMotion) field.classList.add("shake");
   }
 }
+
+// Re-frame the camera when the window is resized.
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!$("play").classList.contains("hidden") && state.live && !state.answered) renderField(state.live);
+  }, 150);
+});
 
 // ---------- Scenario flow ----------
 function renderScenario() {
