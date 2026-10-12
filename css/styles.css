@@ -461,3 +461,6 @@ kbd { font-family: var(--pixel); font-size: 0.55rem; background: #000; border: 2
   .hud { gap: 8px 16px; }
   .pips { margin-left: 0; }
 }
+
+.topbar { flex-wrap: wrap; }
+.topbar nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }

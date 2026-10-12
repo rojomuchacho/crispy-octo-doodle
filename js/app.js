@@ -14,6 +14,7 @@ const state = {
   league: loadPref("headset-league") || "nfl",
   clockOn: loadPref("headset-clock") !== "off",
   soundOn: loadPref("headset-sound") !== "off",
+  musicOn: loadPref("headset-music") !== "off",
   mode: "random",
   queue: [], index: 0, score: 0, streak: 0, bestStreak: 0, results: [],
   timer: null, timeLeft: PLAY_CLOCK_SECS, answered: false,
@@ -47,38 +48,128 @@ function shuffle(arr) {
   return a;
 }
 
-// ---------- 8-bit sound (Web Audio; browsers only allow it after a click) ----------
+// ---------- 8-bit audio (Web Audio; browsers only allow it after a click) ----------
 let audioCtx = null;
-function tone(freq, start, dur, type = "square", vol = 0.06) {
-  if (!state.soundOn) return;
+let noiseBuffer = null;
+function ctx() {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function tone(freq, start, dur, type = "square", vol = 0.06, slideTo = null) {
   try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const t = audioCtx.currentTime + start;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+    const ac = ctx();
+    const t = ac.currentTime + start;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(ac.destination);
     osc.start(t);
-    osc.stop(t + dur);
+    osc.stop(t + dur + 0.02);
   } catch {}
 }
+
+// Filtered white noise: crowd roar, groan, and the snare in the music.
+function noise(start, dur, { freq = 1000, q = 0.7, vol = 0.08, attack = 0.01 } = {}) {
+  try {
+    const ac = ctx();
+    if (!noiseBuffer) {
+      noiseBuffer = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const t = ac.currentTime + start;
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuffer;
+    src.loop = true;
+    const filter = ac.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = freq;
+    filter.Q.value = q;
+    const gain = ac.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(vol, t + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(filter).connect(gain).connect(ac.destination);
+    src.start(t);
+    src.stop(t + dur + 0.02);
+  } catch {}
+}
+
+const sfx = (fn) => () => { if (state.soundOn) fn(); };
 const SFX = {
-  click: () => tone(660, 0, 0.05),
-  best: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.08, 0.12)),
-  ok: () => [523, 659].forEach((f, i) => tone(f, i * 0.1, 0.12)),
-  bad: () => { tone(196, 0, 0.18, "sawtooth"); tone(147, 0.16, 0.3, "sawtooth"); },
-  tick: () => tone(1200, 0, 0.03, "square", 0.03),
-  whistle: () => { tone(2200, 0, 0.12, "sine", 0.05); tone(2200, 0.16, 0.3, "sine", 0.05); },
-  start: () => [392, 523, 659, 784, 659, 784].forEach((f, i) => tone(f, i * 0.07, 0.1)),
+  click: sfx(() => tone(660, 0, 0.05)),
+  hover: sfx(() => tone(880, 0, 0.025, "square", 0.02)),
+  best: sfx(() => {
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.08, 0.14));
+    tone(1047, 0.34, 0.35, "square", 0.05);
+    noise(0.05, 1.6, { freq: 900, q: 0.4, vol: 0.12, attack: 0.25 }); // crowd roar
+  }),
+  ok: sfx(() => {
+    [523, 659].forEach((f, i) => tone(f, i * 0.1, 0.14));
+    noise(0.05, 0.9, { freq: 800, q: 0.5, vol: 0.05, attack: 0.2 }); // polite applause
+  }),
+  bad: sfx(() => {
+    tone(196, 0, 0.18, "sawtooth", 0.06);
+    tone(147, 0.16, 0.4, "sawtooth", 0.06, 110);
+    noise(0.1, 1.2, { freq: 300, q: 1.2, vol: 0.09, attack: 0.3 }); // crowd groan
+  }),
+  tick: sfx(() => tone(1200, 0, 0.03, "square", 0.03)),
+  whistle: sfx(() => {
+    tone(2600, 0, 0.12, "sine", 0.05);
+    tone(2400, 0.15, 0.32, "sine", 0.05);
+  }),
+  snap: sfx(() => tone(2700, 0, 0.18, "sine", 0.035)), // short ref whistle each situation
+  start: sfx(() => [392, 523, 659, 784, 659, 784].forEach((f, i) => tone(f, i * 0.07, 0.1))),
+  fanfare: sfx(() => {
+    [392, 392, 392, 523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, i === 6 ? 0.6 : 0.1));
+    noise(0.2, 2.2, { freq: 900, q: 0.4, vol: 0.12, attack: 0.4 });
+  }),
+  gameOver: sfx(() => [392, 330, 262, 196].forEach((f, i) => tone(f, i * 0.2, 0.25, "triangle", 0.07))),
 };
+
+// Chiptune loop: bass + arpeggio + hi-hat/snare, scheduled slightly ahead of time.
+const MUSIC = {
+  bpm: 132,
+  bass: [110, 0, 110, 0, 131, 0, 131, 0, 98, 0, 98, 0, 147, 0, 131, 0],
+  lead: [440, 523, 659, 523, 523, 659, 784, 659, 392, 494, 587, 494, 587, 698, 880, 698],
+  step: 0, next: 0, timer: null,
+};
+function startMusic() {
+  if (!state.musicOn || MUSIC.timer) return;
+  try { ctx(); } catch { return; }
+  MUSIC.next = audioCtx.currentTime + 0.05;
+  MUSIC.timer = setInterval(() => {
+    const stepLen = 60 / MUSIC.bpm / 2;
+    while (MUSIC.next < audioCtx.currentTime + 0.15) {
+      const i = MUSIC.step % 16;
+      const at = MUSIC.next - audioCtx.currentTime;
+      if (MUSIC.bass[i]) tone(MUSIC.bass[i], at, stepLen * 1.6, "triangle", 0.05);
+      if (MUSIC.step % 64 >= 32 || i % 2 === 0) tone(MUSIC.lead[i], at, stepLen * 0.8, "square", 0.012);
+      noise(at, 0.03, { freq: 7000, q: 1, vol: 0.012, attack: 0.002 });
+      if (i === 4 || i === 12) noise(at, 0.12, { freq: 1800, q: 0.8, vol: 0.03, attack: 0.002 });
+      MUSIC.next += stepLen;
+      MUSIC.step++;
+    }
+  }, 50);
+}
+function stopMusic() {
+  clearInterval(MUSIC.timer);
+  MUSIC.timer = null;
+}
 
 function renderSoundToggle() {
   const b = $("sound-toggle");
   b.textContent = state.soundOn ? "SFX: ON" : "SFX: OFF";
   b.setAttribute("aria-pressed", String(state.soundOn));
+  const m = $("music-toggle");
+  m.textContent = state.musicOn ? "MUSIC: ON" : "MUSIC: OFF";
+  m.setAttribute("aria-pressed", String(state.musicOn));
 }
 
 // ---------- Home ----------
@@ -116,6 +207,7 @@ function renderHome() {
 
 function startGame(pool, mode = "random") {
   SFX.start();
+  startMusic();
   Object.assign(state, {
     mode,
     queue: mode === "real" ? [...pool] : shuffle(pool).slice(0, GAME_LENGTH),
@@ -285,9 +377,11 @@ function renderScenario() {
     b.className = "option";
     b.innerHTML = `<span class="key">${i + 1}</span><span class="opt-text">${opt.text}</span>`;
     b.onclick = () => choose(sc, opt, b);
+    b.onmouseenter = () => { if (!state.answered) SFX.hover(); };
     b._opt = opt;
     opts.appendChild(b);
   });
+  SFX.snap();
   runClock();
 }
 
@@ -409,7 +503,8 @@ function renderResults() {
     const choice = picked ? picked.text : "Delay of game (play clock ran out)";
     return `<div class="review-item"><span class="mark">${marks[picked ? picked.grade : "bad"]}</span><b>${sc.title}</b> — you chose: ${choice}${extra}</div>`;
   }).join("");
-  (pct >= 55 ? SFX.best : SFX.bad)();
+  stopMusic();
+  (pct >= 75 ? SFX.fanfare : pct >= 55 ? SFX.best : SFX.gameOver)();
   show("results");
 }
 
@@ -453,7 +548,13 @@ document.querySelectorAll("[data-nav]").forEach((b) => {
 $("start-all").onclick = () => startGame(leaguePool());
 $("start-real").onclick = () => startGame(realPool(), "real");
 $("next-btn").onclick = nextScenario;
-$("play-again").onclick = renderHome;
+$("play-again").onclick = () => { startMusic(); renderHome(); };
+$("music-toggle").onclick = () => {
+  state.musicOn = !state.musicOn;
+  savePref("headset-music", state.musicOn ? "on" : "off");
+  renderSoundToggle();
+  if (state.musicOn) startMusic(); else stopMusic();
+};
 $("sound-toggle").onclick = () => {
   state.soundOn = !state.soundOn;
   savePref("headset-sound", state.soundOn ? "on" : "off");
@@ -485,9 +586,22 @@ document.addEventListener("keydown", (e) => {
 
 // Pause the play clock while the tab is hidden, so switching tabs never costs a delay of game.
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopClock();
-  else if (!$("play").classList.contains("hidden") && !state.answered) runClock();
+  if (document.hidden) { stopClock(); stopMusic(); }
+  else {
+    if (!$("results").classList.contains("hidden")) return;
+    if (audioCtx) startMusic();
+    if (!$("play").classList.contains("hidden") && !state.answered) runClock();
+  }
 });
+
+// Title music starts on the first click or key press (browsers block audio before that).
+const firstInteraction = () => {
+  window.removeEventListener("pointerdown", firstInteraction);
+  window.removeEventListener("keydown", firstInteraction);
+  startMusic();
+};
+window.addEventListener("pointerdown", firstInteraction);
+window.addEventListener("keydown", firstInteraction);
 
 renderSoundToggle();
 renderHome();
